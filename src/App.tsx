@@ -571,38 +571,116 @@ function InvestorView({ data, searchQuery }) {
 }
 
 function FreeFloatView({ data, searchQuery }) {
+  const [filterCategory, setFilterCategory] = useState('ALL');
+
   const emitenList = useMemo(() => {
     const groups = {};
     data.forEach(item => {
-      if (!groups[item.ticker]) groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, nonPublicTotal: 0 };
+      if (!groups[item.ticker]) {
+        groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, nonPublicTotal: 0 };
+      }
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(item.category.code) || item.isPengendali;
       if (isPengurang) groups[item.ticker].nonPublicTotal += item.percentage;
     });
+    
     return Object.values(groups).map(g => {
       g.freeFloat = Math.max(0, Math.min(100, 100 - g.nonPublicTotal));
       g.searchKey = `${g.ticker} ${g.name}`.toLowerCase(); 
+      
+      if (g.freeFloat <= 5.0) {
+        g.categoryLabel = "Low Free Float (\u2264 5%)";
+        g.categoryColor = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+        g.catCode = 'LOW';
+      } else if (g.freeFloat < 15.0) {
+        g.categoryLabel = "Below Regulatory Risk (< 15%)";
+        g.categoryColor = "bg-orange-500/10 text-orange-400 border-orange-500/20";
+        g.catCode = 'BELOW';
+      } else if (g.freeFloat <= 50.0) {
+        g.categoryLabel = "Mid Float (15% - 50%)";
+        g.categoryColor = "bg-blue-500/10 text-blue-400 border-blue-500/20";
+        g.catCode = 'MID';
+      } else {
+        g.categoryLabel = "High Float (> 50%)";
+        g.categoryColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+        g.catCode = 'HIGH';
+      }
       return g;
     }).sort((a, b) => a.freeFloat - b.freeFloat);
   }, [data]);
 
   const filteredItems = useMemo(() => {
-    if (searchQuery) return emitenList.filter(item => item.searchKey.includes(searchQuery.toLowerCase()));
-    return emitenList;
-  }, [searchQuery, emitenList]);
+    let items = emitenList;
+    if (searchQuery) {
+      items = items.filter(item => item.searchKey.includes(searchQuery.toLowerCase()));
+    } 
+    else if (filterCategory !== 'ALL') {
+      items = items.filter(item => item.catCode === filterCategory);
+    }
+    return items;
+  }, [searchQuery, emitenList, filterCategory]);
 
   return (
-    <div className="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden shadow-lg p-6">
-       <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2"><Layers size={24} className="text-indigo-400" /> Daftar Emiten Berdasarkan Free Float</h2>
-       <div className="overflow-x-auto">
-         <table className="w-full text-left border-collapse min-w-[600px]">
-           <thead><tr className="border-b border-slate-700 text-xs uppercase text-slate-500"><th className="py-4 font-medium">Kode</th><th className="py-4 font-medium">Nama Emiten</th><th className="py-4 font-medium text-right">Saham Publik (Float)</th></tr></thead>
-           <tbody>
-             {filteredItems.map(item => (
-               <tr key={item.ticker} className="border-b border-slate-800/50"><td className="py-4 font-bold text-white">{item.ticker}</td><td className="py-4 text-slate-300">{item.name}</td><td className="py-4 text-right font-mono font-bold text-emerald-400 text-lg">{item.freeFloat.toFixed(2)}%</td></tr>
-             ))}
-           </tbody>
-         </table>
-       </div>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-slate-800/40 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
+        <div className="p-6 border-b border-slate-800 flex flex-col gap-5">
+           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+             <h2 className="text-xl font-bold text-white flex items-center gap-2">
+               <Layers size={24} className="text-indigo-400" />
+               Daftar Emiten Berdasarkan Free Float
+             </h2>
+             <div className="px-4 py-2 rounded-lg bg-slate-900/50 border border-slate-700 font-mono font-bold text-slate-300">
+               Total: {filteredItems.length} Emiten
+             </div>
+           </div>
+           
+           <div className="flex flex-wrap items-center gap-2">
+             <div className="text-sm text-slate-400 flex items-center gap-1.5 mr-2">
+               <Filter size={16} /> Filter:
+             </div>
+             <button onClick={() => setFilterCategory('LOW')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${filterCategory === 'LOW' ? 'bg-rose-600 text-white border-rose-500' : 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20'}`}>Low (&le; 5%)</button>
+             <button onClick={() => setFilterCategory('BELOW')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${filterCategory === 'BELOW' ? 'bg-orange-600 text-white border-orange-500' : 'bg-orange-500/10 text-orange-400 border-orange-500/20 hover:bg-orange-500/20'}`}>Below (&lt; 15%)</button>
+             <button onClick={() => setFilterCategory('MID')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${filterCategory === 'MID' ? 'bg-blue-600 text-white border-blue-500' : 'bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20'}`}>Mid (15% - 50%)</button>
+             <button onClick={() => setFilterCategory('HIGH')} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${filterCategory === 'HIGH' ? 'bg-emerald-600 text-white border-emerald-500' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'}`}>High (&gt; 50%)</button>
+             <button onClick={() => setFilterCategory('ALL')} className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${filterCategory === 'ALL' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-900/50 text-slate-400 border-slate-700 hover:bg-slate-800'}`}>ALL</button>
+           </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead>
+              <tr className="border-b border-slate-700 bg-slate-900/50 text-xs uppercase text-slate-500 tracking-wider">
+                <th className="py-4 px-6 font-medium">Kode</th>
+                <th className="py-4 px-6 font-medium">Nama Emiten</th>
+                <th className="py-4 px-6 font-medium text-right">Non-Publik / Pengendali</th>
+                <th className="py-4 px-6 font-medium text-right">Saham Publik (Float)</th>
+                <th className="py-4 px-6 font-medium">Kategori Float</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredItems.map(item => (
+                <tr key={item.ticker} className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors">
+                  <td className="py-4 px-6 font-bold text-white">{item.ticker}</td>
+                  <td className="py-4 px-6 text-slate-300">{item.name}</td>
+                  <td className="py-4 px-6 text-right font-mono text-rose-400">{item.nonPublicTotal.toFixed(2)}%</td>
+                  <td className="py-4 px-6 text-right font-mono font-bold text-white text-lg">{item.freeFloat.toFixed(2)}%</td>
+                  <td className="py-4 px-6">
+                    <span className={`inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold border ${item.categoryColor}`}>
+                      {item.categoryLabel}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="py-12 text-center text-slate-500">
+                    Tidak ada emiten yang sesuai dengan pencarian atau filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

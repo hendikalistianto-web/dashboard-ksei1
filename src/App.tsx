@@ -4,27 +4,8 @@ import {
   Search, Building2, User, Users, 
   Activity, ArrowUpRight, ArrowDownRight, 
   PieChart, FileUp, CheckCircle2, ShieldAlert, Layers, Filter, Network,
-  ZoomIn, ZoomOut, Maximize, Globe, MapPin, Flag, Lock
+  ZoomIn, ZoomOut, Maximize, Globe, MapPin, Flag
 } from 'lucide-react';
-
-// --- FIREBASE CLOUD STORAGE IMPORTS ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, collection, onSnapshot, writeBatch, getDocs } from 'firebase/firestore';
-
-// --- INITIALIZE FIREBASE APP (CLEANED FOR VERCEL) ---
-let app, auth, db, appId;
-try {
-  const firebaseConfig = { 
-    apiKey: "mock", authDomain: "mock", projectId: "mock", storageBucket: "mock", messagingSenderId: "mock", appId: "mock" 
-  };
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-  appId = 'dashboard-ksei-public';
-} catch (e) {
-  console.warn("Firebase skipped.", e);
-}
 
 // --- DATABASE VERIFIKASI GOOGLE SEARCH (DIREKSI/FOUNDER) ---
 const KNOWN_FOUNDERS = [
@@ -81,6 +62,7 @@ function parseCSV(text) {
   let currentRow = [];
   let currentCell = '';
   let inQuotes = false;
+  
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (inQuotes) {
@@ -207,13 +189,8 @@ export default function App() {
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [isUploaded, setIsUploaded] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isFetchingDB, setIsFetchingDB] = useState(true);
   const [uploadError, setUploadError] = useState('');
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState(false);
-  const [user, setUser] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -221,131 +198,54 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // --- MENGAMBIL DATA DEFAULT DARI FOLDER PUBLIC ---
   useEffect(() => {
-    if (!auth) {
-      setIsFetchingDB(false);
-      return;
-    }
-    const initAuth = async () => {
+    const loadDefaultData = async () => {
       try {
-        await signInAnonymously(auth);
+        setIsFetchingDB(true);
+        // Mengambil file data-ksei.csv dari folder public
+        const response = await fetch('/data-ksei.csv');
+        if (!response.ok) {
+          throw new Error("File default tidak ditemukan.");
+        }
+        const text = await response.text();
+        const mappedData = processData(parseCSV(text));
+        setData(mappedData);
+        setIsUploaded(true);
       } catch (error) {
-        console.error('Auth Error', error);
+        console.error("Gagal memuat data default:", error);
+        setIsUploaded(false);
+      } finally {
         setIsFetchingDB(false);
       }
     };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-       setUser(u);
-       if (!u) setIsFetchingDB(false);
-    });
-    return () => unsubscribe();
+
+    loadDefaultData();
   }, []);
 
-  useEffect(() => {
-    if (!user || !db) return;
-    const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockData');
-    const unsubscribe = onSnapshot(collRef, (snapshot) => {
-      let allData = [];
-      snapshot.docs.forEach(doc => {
-        const docData = doc.data();
-        if (docData.items && Array.isArray(docData.items)) {
-          allData = allData.concat(docData.items);
-        }
-      });
-      allData.sort((a, b) => b.percentage - a.percentage);
-      setData(allData);
-      setIsFetchingDB(false);
-      setIsUploaded(allData.length > 0);
-    }, (error) => {
-      console.error("Fetch DB error:", error);
-      setIsFetchingDB(false);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
-
-  const triggerUploadUI = () => setIsPasswordModalOpen(true);
-
-  const handlePasswordSubmit = () => {
-    if (passwordInput === 'HendykaGanteng') {
-      setIsPasswordModalOpen(false);
-      setPasswordInput('');
-      setPasswordError(false);
-      fileInputRef.current.click(); 
-    } else {
-      setPasswordError(true);
-    }
-  };
-
-  const handleFileUpload = async (e) => {
+  // --- MANUAL UPLOAD UNTUK UPDATE DATA LOKAL ---
+  const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    setIsSaving(true);
     setUploadError('');
     
     const reader = new FileReader();
-    reader.onload = async (evt) => {
+    reader.onload = (evt) => {
       try {
         const text = evt.target.result;
         const mappedData = processData(parseCSV(text));
-        
-        if (user && db) {
-          const collRef = collection(db, 'artifacts', appId, 'public', 'data', 'stockData');
-          const existingDocs = await getDocs(collRef);
-          let deleteBatches = [];
-          let dBatch = writeBatch(db);
-          let dCount = 0;
-          existingDocs.forEach(d => {
-             dBatch.delete(d.ref);
-             dCount++;
-             if (dCount === 400) {
-                 deleteBatches.push(dBatch.commit());
-                 dBatch = writeBatch(db);
-                 dCount = 0;
-             }
-          });
-          if (dCount > 0) deleteBatches.push(dBatch.commit());
-          await Promise.all(deleteBatches);
-
-          const chunkSize = 400; 
-          let writeBatches = [];
-          let wBatch = writeBatch(db);
-          let wCount = 0;
-          
-          for (let i = 0; i < mappedData.length; i += chunkSize) {
-            const chunk = mappedData.slice(i, i + chunkSize);
-            const newDocRef = doc(collRef);
-            wBatch.set(newDocRef, { index: i, items: chunk });
-            wCount++;
-            
-            if (wCount === 400) {
-               writeBatches.push(wBatch.commit());
-               wBatch = writeBatch(db);
-               wCount = 0;
-            }
-          }
-          if (wCount > 0) writeBatches.push(wBatch.commit());
-          await Promise.all(writeBatches);
-
-          setIsUploaded(true);
-        } else {
-          setData(mappedData);
-          setIsUploaded(true);
-        }
-      } catch (error) {
-        console.error("Save Error:", error);
-        setUploadError("Koneksi gagal saat menyimpan ke Cloud. Tampilan saat ini hanya tersimpan lokal.");
-        const text = evt.target.result;
-        setData(processData(parseCSV(text)));
+        setData(mappedData);
         setIsUploaded(true);
-      } finally {
-        setIsSaving(false);
+      } catch (error) {
+        console.error("Parsing Error:", error);
+        setUploadError("Gagal membaca file CSV. Pastikan format sesuai.");
       }
     };
     reader.readAsText(file);
     e.target.value = null; 
   };
+
+  const triggerUploadUI = () => fileInputRef.current.click();
 
   const totalEmiten = new Set(data.map(d => d.ticker)).size;
   const totalInvestor = new Set(data.map(d => d.investor)).size;
@@ -355,7 +255,7 @@ export default function App() {
        return (
          <div className="flex flex-col items-center justify-center py-32 opacity-70 h-full w-full">
             <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-            <p className="text-blue-400 font-bold text-center text-lg">Menghubungkan ke Cloud...</p>
+            <p className="text-blue-400 font-bold text-center text-lg">Memuat Data Analytics...</p>
          </div>
        );
     }
@@ -363,7 +263,7 @@ export default function App() {
       <div className="mb-6 bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 flex flex-col items-start justify-between">
           <h3 className="text-blue-400 font-bold text-lg mb-2">Sistem Siap Digunakan</h3>
           <p className="text-sm text-slate-400 max-w-2xl">
-            Sistem tidak menemukan data default di Cloud. Silakan klik tombol <b>"Upload Admin CSV"</b> untuk menanamkan database.
+            Sistem tidak menemukan file default di Cloud Vercel. Silakan klik tombol <b>"Upload Data KSEI"</b> untuk memuat file.
           </p>
       </div>
     );
@@ -380,40 +280,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-slate-300 font-sans flex flex-col md:flex-row overflow-hidden relative">
-      {isSaving && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-           <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-6"></div>
-           <h2 className="text-xl text-white font-bold">Menyimpan ke Cloud Database...</h2>
-        </div>
-      )}
-
-      {isPasswordModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#151e2f] border border-slate-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-3 border-b border-slate-700/50 pb-4">
-              <div className="bg-amber-500/20 p-2 rounded-lg"><Lock className="text-amber-400" size={20} /></div>
-              Otorisasi Admin Terpusat
-            </h3>
-            <div className="py-4">
-               <input 
-                 type="password"
-                 value={passwordInput}
-                 onChange={(e) => setPasswordInput(e.target.value)}
-                 onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
-                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 mb-2 font-mono tracking-widest placeholder:tracking-normal placeholder-slate-600"
-                 placeholder="Masukkan Password"
-                 autoFocus
-               />
-               {passwordError && <p className="text-rose-500 text-xs font-semibold mt-2 animate-pulse">Sandi salah.</p>}
-            </div>
-            <div className="flex justify-end gap-3 mt-2">
-              <button onClick={() => { setIsPasswordModalOpen(false); setPasswordError(false); setPasswordInput(''); }} className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">Batal</button>
-              <button onClick={handlePasswordSubmit} className="px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg">Akses & Upload</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <aside className="w-full md:w-64 bg-[#111827] border-b md:border-b-0 md:border-r border-slate-800 flex flex-col z-20 shrink-0">
         <div className="p-6 flex flex-col items-start gap-4 border-b border-slate-800/50">
           <div className="bg-white p-2 rounded-xl shadow-lg shadow-black/20 w-full flex items-center justify-center">
@@ -450,10 +316,10 @@ export default function App() {
             <input type="file" accept=".csv" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
             <button
               onClick={triggerUploadUI}
-              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg ${isUploaded ? 'bg-emerald-600 text-white' : 'bg-blue-600 text-white'}`}
+              className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-lg ${isUploaded ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
             >
               {isUploaded ? <CheckCircle2 size={18} /> : <FileUp size={18} />}
-              <span className="hidden sm:inline">{isUploaded ? 'Timpa Database' : 'Upload Admin CSV'}</span>
+              <span className="hidden sm:inline">{isUploaded ? 'Upload Data Baru' : 'Upload Data KSEI'}</span>
             </button>
           </div>
         </header>

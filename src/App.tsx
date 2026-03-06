@@ -463,13 +463,17 @@ function DashboardView({ data }) {
 
 function EmitenView({ data, searchQuery }) {
   const [alphaFilter, setAlphaFilter] = useState('A');
+
   const emitenGroupsArray = useMemo(() => {
     const groups = {};
     data.forEach(item => {
-      if (!groups[item.ticker]) groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, holders: [], totalTracked: 0 };
+      if (!groups[item.ticker]) {
+        groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, holders: [], totalTracked: 0 };
+      }
       groups[item.ticker].holders.push(item);
       groups[item.ticker].totalTracked += item.percentage;
     });
+    
     return Object.values(groups).map(g => {
       g.holders.sort((a,b) => b.percentage - a.percentage);
       g.searchKey = `${g.ticker} ${g.name} ${g.holders.map(h => h.investor).join(' ')}`.toLowerCase();
@@ -479,32 +483,104 @@ function EmitenView({ data, searchQuery }) {
 
   const filteredTickers = useMemo(() => {
     let items = emitenGroupsArray;
-    if (searchQuery) items = items.filter(g => g.searchKey.includes(searchQuery.toLowerCase()));
+    
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      items = items.filter(g => g.searchKey.includes(q));
+    } 
     else if (alphaFilter !== 'ALL') {
-      if (alphaFilter === '#') items = items.filter(g => !/^[A-Z]/i.test(g.ticker.trim()));
-      else items = items.filter(g => g.ticker.trim().toUpperCase().startsWith(alphaFilter));
+      if (alphaFilter === '#') {
+        items = items.filter(g => !/^[A-Z]/i.test(g.ticker.trim()));
+      } else {
+        items = items.filter(g => g.ticker.trim().toUpperCase().startsWith(alphaFilter));
+      }
     }
+    
     return items;
   }, [searchQuery, alphaFilter, emitenGroupsArray]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <AlphabetFilter selected={alphaFilter} onChange={setAlphaFilter} />
+
+      {filteredTickers.length === 0 && (
+        <div className="text-center py-20 text-slate-500">
+          <Search size={48} className="mx-auto mb-4 opacity-20" />
+          <p>Pencarian tidak ditemukan.</p>
+        </div>
+      )}
+
       {filteredTickers.map(group => {
         const publicFloat = Math.max(0, 100 - group.totalTracked);
-        const pieData = group.holders.slice(0, 15).map((h, i) => ({ label: h.investor, percentage: h.percentage, color: CHART_COLORS[i % CHART_COLORS.length] }));
+        
+        const pieData = group.holders.slice(0, 15).map((h, i) => ({
+          label: h.investor,
+          percentage: h.percentage,
+          color: CHART_COLORS[i % CHART_COLORS.length]
+        }));
+        
+        if (publicFloat > 0 || group.holders.length > 15) {
+          const sisaPercentage = publicFloat + group.holders.slice(15).reduce((acc, curr) => acc + curr.percentage, 0);
+          pieData.push({ label: 'Publik / Lainnya (< 1%)', percentage: sisaPercentage, color: '#334155' });
+        }
+
         return (
-          <div key={group.ticker} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
-            <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
-               <h2 className="text-3xl font-bold text-white mb-4">{group.ticker}</h2>
-               <DonutChart data={pieData} size={140} />
+          <div key={group.ticker} className="bg-[#151e2f] border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex flex-col xl:flex-row mb-6">
+            <div className="xl:w-1/3 p-6 border-b xl:border-b-0 xl:border-r border-slate-800 bg-slate-900/30 flex flex-col justify-between">
+              
+              {/* BAGIAN JUDUL TICKER DAN NAMA PERUSAHAAN */}
+              <div className="mb-6 text-center xl:text-left">
+                <h2 className="text-3xl font-bold text-white tracking-tight">{group.ticker}</h2>
+                <p className="text-sm text-slate-400 mt-1 font-medium leading-snug">{group.name}</p>
+              </div>
+
+              <div className="flex flex-col items-center gap-4 flex-1 justify-center">
+                <DonutChart data={pieData} size={140} />
+                
+                {/* BAGIAN INFORMASI TAMBAHAN DI BAWAH DONUT CHART */}
+                <div className="w-full mt-4 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Total Terdeteksi (&ge; 1%)</span>
+                    <span className="font-mono text-white font-bold">{group.totalTracked.toFixed(2)}%</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#334155]"></span> Publik / Sisa</span>
+                    <span className="font-mono text-white font-bold">{publicFloat.toFixed(2)}%</span>
+                  </div>
+                </div>
+              </div>
+
             </div>
+            
             <div className="xl:w-2/3 p-6 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead><tr className="border-b border-slate-700/50 text-slate-500"><th className="pb-3">Investor</th><th className="pb-3">Kategori</th><th className="pb-3 text-right">% Saham</th></tr></thead>
+              <table className="w-full text-left border-collapse min-w-[500px]">
+                <thead>
+                  <tr className="border-b border-slate-700/50 text-xs uppercase text-slate-500 tracking-wider">
+                    <th className="py-3 px-2 font-medium">Investor</th>
+                    <th className="py-3 px-2 font-medium">Kategori</th>
+                    <th className="py-3 px-2 font-medium text-right">Volume</th>
+                    <th className="py-3 px-2 font-medium text-right">% Saham</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {group.holders.map(h => (
-                    <tr key={h.id} className="border-b border-slate-800/30"><td className="py-3 text-slate-200">{h.investor}</td><td className="py-3"><CategoryBadge category={h.category} isPengendali={h.isPengendali} small /></td><td className="py-3 font-mono text-white text-right">{h.percentage.toFixed(2)}%</td></tr>
+                  {group.holders.map((holder, idx) => (
+                    <tr key={holder.id} className="border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors">
+                      <td className="py-3 px-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: idx < 15 ? CHART_COLORS[idx % CHART_COLORS.length] : '#334155' }}></div>
+                          <span className="font-medium text-slate-200 text-sm leading-tight">{holder.investor}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2">
+                        <CategoryBadge category={holder.category} isPengendali={holder.isPengendali} small />
+                      </td>
+                      <td className="py-3 px-2 text-right text-slate-400 font-mono text-xs">
+                        {holder.shares.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 text-right font-mono font-bold text-white">
+                        {holder.percentage.toFixed(2)}%
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>

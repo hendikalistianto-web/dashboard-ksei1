@@ -884,102 +884,408 @@ function FreeFloatView({ data, searchQuery }) {
 
 function NetworkView({ data, searchQuery }) {
   const canvasRef = useRef(null);
-  const transformRef = useRef({ x: 0, y: 0, k: 1 });
+  const transformRef = useRef({ x: 0, y: 0, k: 1 }); // k adalah skala (zoom)
 
   const graphData = useMemo(() => {
+    // Hanya proses jika ada minimal 2 huruf pencarian untuk mencegah lag
     if (!searchQuery || searchQuery.length < 2) return null;
     const q = searchQuery.toLowerCase();
-    const directRows = data.filter(d => d.ticker.toLowerCase().includes(q) || d.investor.toLowerCase().includes(q));
+    
+    // Cari data langsung yang cocok
+    const directRows = data.filter(d => d.ticker.toLowerCase().includes(q) || d.investor.toLowerCase().includes(q) || d.emitenName.toLowerCase().includes(q));
     if (directRows.length === 0) return null;
 
+    // Kumpulkan entitas yang terlibat
     const involvedTickers = new Set(directRows.map(d => d.ticker));
     const involvedInvestors = new Set(directRows.map(d => d.investor));
-    let expandedRows = data.filter(d => involvedTickers.has(d.ticker) || involvedInvestors.has(d.investor)).slice(0, 100); 
 
-    const nodeMap = new Map(); const links = [];
+    // Tarik semua koneksi yang melibatkan entitas tersebut
+    let expandedRows = data.filter(d => involvedTickers.has(d.ticker) || involvedInvestors.has(d.investor));
+    
+    // Batasi maksimum node agar physics engine tidak membuat browser macet
+    expandedRows = expandedRows.slice(0, 150); 
+
+    const nodeMap = new Map();
+    const links = [];
+
     expandedRows.forEach(r => {
-      if (!nodeMap.has(r.ticker)) nodeMap.set(r.ticker, { id: r.ticker, label: r.ticker, type: 'emiten', size: 18 });
-      if (!nodeMap.has(r.investor)) nodeMap.set(r.investor, { id: r.investor, label: r.investor, type: 'investor', size: Math.max(10, Math.min(24, r.percentage / 1.5)) });
+      // Emiten Nodes
+      if (!nodeMap.has(r.ticker)) {
+        nodeMap.set(r.ticker, { id: r.ticker, label: r.ticker, type: 'emiten', size: 20 });
+      }
+      // Investor Nodes (Ukuran bervariasi berdasarkan persentase kepemilikan)
+      if (!nodeMap.has(r.investor)) {
+        nodeMap.set(r.investor, { id: r.investor, label: r.investor, type: 'investor', size: Math.max(12, Math.min(30, r.percentage / 1.5)) });
+      }
+      // Link (Koneksi)
       links.push({ source: r.investor, target: r.ticker, value: r.percentage });
     });
+
     return { nodes: Array.from(nodeMap.values()), links };
   }, [data, searchQuery]);
 
   useEffect(() => {
     if (!graphData) return;
-    const canvas = canvasRef.current; if (!canvas) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let animationFrameId;
 
-    const resize = () => { canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; };
-    window.addEventListener('resize', resize); resize();
+    const resize = () => {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Reset zoom & pan setiap kali data baru dimuat
     transformRef.current = { x: 0, y: 0, k: 1 };
 
-    let nodes = graphData.nodes.map(n => ({ ...n, x: canvas.width / 2 + (Math.random() - 0.5) * 300, y: canvas.height / 2 + (Math.random() - 0.5) * 300, vx: 0, vy: 0 }));
-    let simLinks = graphData.links.map(l => ({ ...l, sourceNode: nodes.find(n => n.id === l.source), targetNode: nodes.find(n => n.id === l.target) })).filter(l => l.sourceNode && l.targetNode);
+    // Inisialisasi posisi awal (menyebar secara acak di tengah)
+    let nodes = graphData.nodes.map(n => ({
+      ...n,
+      x: canvas.width / 2 + (Math.random() - 0.5) * 300,
+      y: canvas.height / 2 + (Math.random() - 0.5) * 300,
+      vx: 0, vy: 0
+    }));
 
+    let simLinks = graphData.links.map(l => ({
+      ...l,
+      sourceNode: nodes.find(n => n.id === l.source),
+      targetNode: nodes.find(n => n.id === l.target)
+    })).filter(l => l.sourceNode && l.targetNode);
+
+    let draggedNode = null;
+    let hoveredNode = null;
+    let isPanning = false;
+    let startPanX = 0, startPanY = 0;
+    
+    // Status simulasi fisika (auto-sleep)
     let isSimulating = true;
+    const wakeupSimulation = () => {
+      if (!isSimulating) {
+        isSimulating = true;
+        simulate();
+      }
+    };
+
+    // --- EVENT LISTENERS UNTUK INTERAKSI MOUSE ---
+    canvas.onmousedown = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const t = transformRef.current;
+      
+      // Hitung koordinat klik relatif terhadap zoom (k) dan pan (x,y)
+      const simX = (mx - t.x) / t.k;
+      const simY = (my - t.y) / t.k;
+
+      // Cek apakah klik mengenai node
+      draggedNode = nodes.find(n => Math.hypot(n.x - simX, n.y - simY) < n.size + 10);
+      
+      if (!draggedNode) {
+        // Jika tidak kena node, berarti mulai Panning (geser layar)
+        isPanning = true;
+        startPanX = mx - t.x;
+        startPanY = my - t.y;
+        canvas.style.cursor = 'grabbing';
+      } else {
+        canvas.style.cursor = 'grabbing';
+      }
+      wakeupSimulation();
+    };
+    
+    canvas.onmousemove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const t = transformRef.current;
+
+      if (isPanning) {
+        t.x = mx - startPanX;
+        t.y = my - startPanY;
+        wakeupSimulation();
+        return;
+      }
+
+      const simX = (mx - t.x) / t.k;
+      const simY = (my - t.y) / t.k;
+
+      if (draggedNode) {
+        draggedNode.x = simX;
+        draggedNode.y = simY;
+        draggedNode.vx = 0;
+        draggedNode.vy = 0;
+        wakeupSimulation();
+      } else {
+        // Cek Hover untuk menampilkan persentase & garis merah tebal
+        const prevHovered = hoveredNode;
+        hoveredNode = nodes.find(n => Math.hypot(n.x - simX, n.y - simY) < n.size + 10);
+        canvas.style.cursor = hoveredNode ? 'pointer' : (isPanning ? 'grabbing' : 'grab');
+        if (prevHovered !== hoveredNode) wakeupSimulation();
+      }
+    };
+    
+    canvas.onmouseup = () => { draggedNode = null; isPanning = false; canvas.style.cursor = hoveredNode ? 'pointer' : 'grab'; };
+    canvas.onmouseleave = () => { draggedNode = null; hoveredNode = null; isPanning = false; canvas.style.cursor = 'default'; };
+
+    // ZOOM DENGAN SCROLL MOUSE
+    canvas.onwheel = (e) => {
+      e.preventDefault();
+      const zoomIntensity = 0.1;
+      const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
+      const t = transformRef.current;
+      
+      // Batas zoom: minimal 0.1x, maksimal 5x
+      const newK = Math.max(0.1, Math.min(5, t.k * (1 + delta)));
+      
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      
+      // Sesuaikan pergeseran (pan) agar zoom mengarah ke posisi kursor mouse
+      t.x = mx - (mx - t.x) * (newK / t.k);
+      t.y = my - (my - t.y) * (newK / t.k);
+      t.k = newK;
+      
+      wakeupSimulation();
+    };
+
+    const q = searchQuery ? searchQuery.toLowerCase() : "";
+
+    // --- ENGINE SIMULASI FISIKA (D3-force style) ---
     const simulate = () => {
       if (!isSimulating) return;
-      const t = transformRef.current; let totalVelocity = 0;
+      const t = transformRef.current;
+      let totalVelocity = 0;
+
+      // 1. Gaya Tolak Menolak (Repulsion) antar node
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[j].x - nodes[i].x; const dy = nodes[j].y - nodes[i].y; const distSq = dx * dx + dy * dy || 1;
-          if (distSq < 15000) { 
-            const force = 3000 / distSq; const dist = Math.sqrt(distSq);
-            nodes[i].vx -= (dx / dist) * force; nodes[i].vy -= (dy / dist) * force;
-            nodes[j].vx += (dx / dist) * force; nodes[j].vy += (dy / dist) * force;
+          if(nodes[i] === draggedNode || nodes[j] === draggedNode) continue;
+          const dx = nodes[j].x - nodes[i].x;
+          const dy = nodes[j].y - nodes[i].y;
+          const distSq = dx * dx + dy * dy || 1;
+          if (distSq < 25000) { 
+            const force = 5000 / distSq;
+            const dist = Math.sqrt(distSq);
+            nodes[i].vx -= (dx / dist) * force;
+            nodes[i].vy -= (dy / dist) * force;
+            nodes[j].vx += (dx / dist) * force;
+            nodes[j].vy += (dy / dist) * force;
           }
         }
       }
+
+      // 2. Gaya Tarik Menarik berdasarkan Links (Spring)
       simLinks.forEach(link => {
         const { sourceNode: source, targetNode: target } = link;
-        const dx = target.x - source.x; const dy = target.y - source.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1; const force = (dist - 100) * 0.05; 
-        source.vx += (dx / dist) * force; source.vy += (dy / dist) * force;
-        target.vx -= (dx / dist) * force; target.vy -= (dy / dist) * force;
-      });
-      nodes.forEach(n => {
-        const dx = (canvas.width / 2) - n.x; const dy = (canvas.height / 2) - n.y;
-        n.vx += dx * 0.005; n.vy += dy * 0.005;
-        n.vx *= 0.85; n.vy *= 0.85; n.x += n.vx; n.y += n.vy; totalVelocity += Math.abs(n.vx) + Math.abs(n.vy);
+        if (!source || !target) return;
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const force = (dist - 140) * 0.05; // Jarak ideal antar koneksi: 140px
+        if(source !== draggedNode) { source.vx += (dx / dist) * force; source.vy += (dy / dist) * force; }
+        if(target !== draggedNode) { target.vx -= (dx / dist) * force; target.vy -= (dy / dist) * force; }
       });
 
+      // 3. Gravitasi ke Tengah Canvas (Gravity)
+      nodes.forEach(n => {
+        if(n !== draggedNode) {
+          const dx = (canvas.width / 2) - n.x;
+          const dy = (canvas.height / 2) - n.y;
+          n.vx += dx * 0.003;
+          n.vy += dy * 0.003;
+        }
+      });
+
+      // --- MENGGAMBAR KE CANVAS ---
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.save(); ctx.translate(t.x, t.y); ctx.scale(t.k, t.k);
+      ctx.save();
+      // Terapkan Zoom dan Geser layar
+      ctx.translate(t.x, t.y);
+      ctx.scale(t.k, t.k);
 
+      // Gambar Garis Koneksi (Links)
       simLinks.forEach(link => {
-        ctx.beginPath(); ctx.moveTo(link.sourceNode.x, link.sourceNode.y); ctx.lineTo(link.targetNode.x, link.targetNode.y);
-        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)'; ctx.stroke();
+        // Cek apakah mouse sedang menyorot node yang terhubung
+        const isHovered = hoveredNode === link.sourceNode || hoveredNode === link.targetNode;
+        
+        ctx.beginPath();
+        ctx.moveTo(link.sourceNode.x, link.sourceNode.y);
+        ctx.lineTo(link.targetNode.x, link.targetNode.y);
+        
+        // Garis MERAH jelas jika disorot, abu-abu tipis jika tidak
+        ctx.lineWidth = isHovered ? Math.max(2, link.value * 0.15) : Math.max(0.5, link.value * 0.05);
+        ctx.strokeStyle = isHovered ? 'rgba(239, 68, 68, 1)' : 'rgba(148, 163, 184, 0.2)';
+        ctx.stroke();
+
+        // Gambar Teks Persentase di Tengah Garis jika Disorot
+        if (isHovered) {
+          const midX = (link.sourceNode.x + link.targetNode.x) / 2;
+          const midY = (link.sourceNode.y + link.targetNode.y) / 2;
+          
+          // Background hitam kecil untuk teks persentase
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+          const textWidth = ctx.measureText(`${link.value.toFixed(2)}%`).width + 8;
+          ctx.roundRect(midX - textWidth/2, midY - 12, textWidth, 16, 4);
+          ctx.fill();
+
+          ctx.fillStyle = '#fca5a5'; // Warna teks persentase (Merah Muda Terang)
+          ctx.font = 'bold 11px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${link.value.toFixed(2)}%`, midX, midY);
+        }
       });
 
+      // Gambar Titik Entitas (Nodes)
       nodes.forEach(n => {
-        ctx.beginPath(); ctx.arc(n.x, n.y, n.size, 0, Math.PI * 2);
-        ctx.fillStyle = n.type === 'emiten' ? '#3b82f6' : '#f59e0b'; ctx.fill();
-        ctx.fillStyle = '#ffffff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-        let displayLabel = n.label.length > 15 ? n.label.substring(0, 15) + '...' : n.label;
-        ctx.fillText(displayLabel, n.x, n.y + n.size + 14);
+        // Terapkan kecepatan dan friksi (gesekan)
+        if (n !== draggedNode) {
+          n.vx = Math.max(-8, Math.min(8, n.vx)) * 0.85;
+          n.vy = Math.max(-8, Math.min(8, n.vy)) * 0.85;
+          n.x += n.vx;
+          n.y += n.vy;
+          totalVelocity += Math.abs(n.vx) + Math.abs(n.vy);
+        }
+
+        const isHovered = hoveredNode === n;
+        // Cek apakah node ini yang diketik di kolom pencarian
+        const isMatched = q && (n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
+
+        ctx.beginPath();
+        // Node sedikit membesar saat disorot
+        ctx.arc(n.x, n.y, isHovered ? n.size + 4 : n.size, 0, Math.PI * 2);
+
+        // PEWARNAAN NODE: Turunan warna jika di-Search
+        if (n.type === 'emiten') {
+          ctx.fillStyle = isMatched ? '#93c5fd' : '#3b82f6'; // Biru Muda jika dicari, Biru Normal jika tidak
+          ctx.strokeStyle = isMatched ? '#ffffff' : '#1e3a8a';
+        } else {
+          ctx.fillStyle = isMatched ? '#fde047' : '#f59e0b'; // Kuning Terang jika dicari, Oranye jika tidak
+          ctx.strokeStyle = isMatched ? '#ffffff' : '#92400e';
+        }
+
+        // Efek Bercahaya (Glow) jika dicari atau disorot
+        if (isMatched || isHovered) {
+          ctx.shadowColor = n.type === 'emiten' ? '#60a5fa' : '#fbbf24';
+          ctx.shadowBlur = isMatched ? 25 : 15;
+          ctx.lineWidth = isMatched ? 3 : 2;
+        } else {
+          ctx.shadowBlur = 0;
+          ctx.lineWidth = 1.5;
+        }
+
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0; // Matikan glow untuk teks
+
+        // Gambar Teks Label Node
+        ctx.fillStyle = isMatched || isHovered ? '#ffffff' : '#cbd5e1';
+        ctx.font = isMatched || isHovered ? 'bold 12px sans-serif' : '10px sans-serif';
+        ctx.textAlign = 'center';
+        
+        let displayLabel = n.label;
+        // Persingkat nama investor yang terlalu panjang jika sedang tidak disorot
+        if(n.type === 'investor' && displayLabel.length > 20 && !isHovered && !isMatched) {
+           displayLabel = displayLabel.substring(0, 18) + '...';
+        }
+        ctx.fillText(displayLabel, n.x, n.y + n.size + (isMatched || isHovered ? 16 : 14));
       });
+
       ctx.restore();
 
-      if (totalVelocity < 0.5) isSimulating = false;
-      else animationFrameId = requestAnimationFrame(simulate);
+      // AUTO-SLEEP: Hentikan kalkulasi fisika jika titik-titik sudah tenang (diam)
+      if (totalVelocity < 0.5 && !draggedNode && !isPanning && !hoveredNode) {
+          isSimulating = false;
+      } else {
+          animationFrameId = requestAnimationFrame(simulate);
+      }
     };
-    simulate();
-    return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(animationFrameId); };
-  }, [graphData]);
+    
+    simulate(); // Mulai loop animasi
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, [graphData, searchQuery]);
+
+  // FUNGSI KONTROL TOMBOL ZOOM
+  const zoomCanvas = (deltaScale) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const t = transformRef.current;
+    const newK = Math.max(0.1, Math.min(5, t.k * deltaScale));
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    t.x = cx - (cx - t.x) * (newK / t.k);
+    t.y = cy - (cy - t.y) * (newK / t.k);
+    t.k = newK;
+    // Paksa update canvas
+    canvas.dispatchEvent(new MouseEvent('mousemove')); 
+  };
+
+  const handleZoomIn = () => zoomCanvas(1.3);
+  const handleZoomOut = () => zoomCanvas(1 / 1.3);
+  const handleResetZoom = () => { 
+    transformRef.current = { x: 0, y: 0, k: 1 }; 
+    if(canvasRef.current) canvasRef.current.dispatchEvent(new MouseEvent('mousemove'));
+  };
 
   return (
-    <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 shadow-lg h-[600px] flex flex-col">
-       <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Network size={24} className="text-indigo-400" /> Ownership Network Map</h2>
-       {!graphData ? (
-          <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-xl bg-slate-900/20">
-             <p className="text-slate-400 text-center">Ketik nama Emiten/Investor di kolom Search atas untuk merender network.</p>
-          </div>
-       ) : (
-          <div className="flex-1 relative bg-[#0a0f1c] rounded-xl overflow-hidden border border-slate-700/50 shadow-inner">
-             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-          </div>
-       )}
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 h-full flex flex-col pb-6">
+      <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 shadow-lg flex-1 flex flex-col min-h-[600px] relative">
+        <div className="mb-4 z-10 relative pointer-events-none">
+           <h2 className="text-xl font-bold text-white flex items-center gap-2">
+             <Network size={24} className="text-indigo-400" />
+             Ownership Network Map
+           </h2>
+           <p className="text-sm text-slate-400 mt-1">Peta interaktif hubungan kepemilikan saham.</p>
+        </div>
+        
+        {!graphData ? (
+           <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-xl bg-slate-900/20 z-0">
+              <Network size={48} className="text-slate-600 mb-4" />
+              <p className="text-slate-400 text-center max-w-md">
+                 Ketik nama Emiten atau Investor di kolom <b>Search</b> atas untuk mulai merender jaring network.<br/><br/>
+                 <span className="text-sm text-white font-semibold bg-blue-600/30 border border-blue-500/50 px-4 py-2 rounded-full inline-block shadow-[0_0_15px_rgba(59,130,246,0.3)]">Contoh: Ketik "GOTO" atau "PRAJOGO"</span>
+              </p>
+           </div>
+        ) : (
+           <div className="absolute inset-0 bg-[#0a0f1c] rounded-2xl overflow-hidden border border-slate-700/50 shadow-inner group mt-20 mx-6 mb-6">
+              
+              {/* CANVAS UTAMA */}
+              <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing" />
+              
+              {/* LEGEND & INFO SUDUT KANAN ATAS */}
+              <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300 pointer-events-none shadow-lg">
+                 {graphData.nodes.length} Entitas | {graphData.links.length} Koneksi
+                 <br/>
+                 <span className="text-blue-400 font-bold inline-block mt-1 mr-3">● Emiten</span>
+                 <span className="text-amber-400 font-bold inline-block mt-1">● Investor</span>
+              </div>
+
+              {/* KONTROL ZOOM KANAN BAWAH */}
+              <div className="absolute bottom-4 right-4 flex flex-col gap-2 transition-opacity">
+                <button onClick={handleZoomIn} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 shadow-lg hover:text-white transition-colors" title="Zoom In (+)">
+                  <ZoomIn size={20} />
+                </button>
+                <button onClick={handleZoomOut} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 shadow-lg hover:text-white transition-colors" title="Zoom Out (-)">
+                  <ZoomOut size={20} />
+                </button>
+                <button onClick={handleResetZoom} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 shadow-lg hover:text-white transition-colors" title="Reset View">
+                  <Maximize size={20} />
+                </button>
+              </div>
+
+              {/* PETUNJUK PENGGUNAAN KIRI BAWAH */}
+              <div className="absolute bottom-4 left-4 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur px-2.5 py-1.5 rounded-md pointer-events-none border border-slate-700">
+                Scroll u/ Zoom • Drag u/ Geser • Hover u/ Info Detail
+              </div>
+           </div>
+        )}
+      </div>
     </div>
   );
 }

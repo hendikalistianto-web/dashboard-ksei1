@@ -280,14 +280,29 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-slate-300 font-sans flex flex-col md:flex-row overflow-hidden relative">
-      <aside className="w-full md:w-64 bg-[#111827] border-b md:border-b-0 md:border-r border-slate-800 flex flex-col z-20 shrink-0">
-        <div className="p-6 flex flex-col items-start gap-4 border-b border-slate-800/50">
+      <div className="p-6 flex flex-col items-start gap-4 border-b border-slate-800/50">
           <div className="bg-white p-2 rounded-xl shadow-lg shadow-black/20 w-full flex items-center justify-center">
             <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjowvt7ARvZePh_g5Pf_00OjAVYkkiIX_SdWspqWvZBo1qL7Ixs2qM23GZcItU0BzacX7fYyaj62ipAiu5MqgqylHQyeT_7GYOrBmtgz6ZhEyv_d9EKzNjnUJCIRR2-IS5nPWLcJrctixDFZPzciKS5Zat-fpbYCOFQ2o1xfUB91aPT5e6Ys6SFB_J8fnza/s1060/LOGO%20PNG%20transparent.png" alt="Logo" className="h-12 w-auto object-contain" />
           </div>
+          
+          {/* GANTI BAGIAN INI */}
           <div className="w-full">
             <p className="text-[11px] text-slate-300 font-semibold tracking-wide">Ownership Tracker &ge; 1%</p>
+            <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+              made with ❤️ by{' '}
+              <a 
+                href="https://www.linkedin.com/in/hendika-listianto-706b27352/" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="font-bold text-blue-400 hover:text-blue-300 transition-all duration-300 inline-block animate-pulse"
+                style={{ textShadow: '0 0 10px rgba(96, 165, 250, 0.8), 0 0 20px rgba(96, 165, 250, 0.6)' }}
+              >
+                hendyka
+              </a>
+            </p>
           </div>
+          {/* SAMPAI SINI */}
+
         </div>
         <nav className="flex-1 px-4 py-4 md:py-8 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-visible scrollbar-hide">
           <NavButton icon={<Activity size={20} />} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />

@@ -938,11 +938,28 @@ function NetworkView({ data, searchQuery }) {
   const canvasRef = useRef(null);
   const transformRef = useRef({ x: 0, y: 0, k: 1 });
 
+  // --- LOGIKA BARU: MENDETEKSI EXACT MATCH ("...") ATAU PARTIAL MATCH ---
+  const searchParams = useMemo(() => {
+    const raw = searchQuery ? searchQuery.trim() : "";
+    // Cek apakah diapit oleh tanda kutip ganda
+    const isExact = raw.startsWith('"') && raw.endsWith('"') && raw.length > 2;
+    // Bersihkan tanda kutip jika exact match, biarkan utuh jika tidak
+    const query = isExact ? raw.slice(1, -1).toLowerCase() : raw.toLowerCase();
+    return { isExact, query };
+  }, [searchQuery]);
+
   const graphData = useMemo(() => {
-    if (!searchQuery || searchQuery.length < 2) return null;
-    const q = searchQuery.toLowerCase();
+    const { isExact, query } = searchParams;
+    if (!query || query.length < 2) return null;
     
-    const directRows = data.filter(d => d.ticker.toLowerCase().includes(q) || d.investor.toLowerCase().includes(q) || d.emitenName.toLowerCase().includes(q));
+    // Fungsi pintar untuk mencocokkan data
+    const matchFn = (str) => {
+      if (!str) return false;
+      const lowerStr = str.toLowerCase();
+      return isExact ? lowerStr === query : lowerStr.includes(query);
+    };
+
+    const directRows = data.filter(d => matchFn(d.ticker) || matchFn(d.investor) || matchFn(d.emitenName));
     if (directRows.length === 0) return null;
 
     const involvedTickers = new Set(directRows.map(d => d.ticker));
@@ -965,7 +982,7 @@ function NetworkView({ data, searchQuery }) {
     });
 
     return { nodes: Array.from(nodeMap.values()), links };
-  }, [data, searchQuery]);
+  }, [data, searchParams]);
 
   useEffect(() => {
     if (!graphData) return;
@@ -1071,9 +1088,8 @@ function NetworkView({ data, searchQuery }) {
       const t = transformRef.current;
       
       const newK = Math.max(0.1, Math.min(5, t.k * (1 + delta)));
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const mx = e.clientX - canvas.getBoundingClientRect().left;
+      const my = e.clientY - canvas.getBoundingClientRect().top;
       
       t.x = mx - (mx - t.x) * (newK / t.k);
       t.y = my - (my - t.y) * (newK / t.k);
@@ -1081,7 +1097,12 @@ function NetworkView({ data, searchQuery }) {
       wakeupSimulation();
     };
 
-    const q = searchQuery ? searchQuery.toLowerCase() : "";
+    const { isExact, query } = searchParams;
+    const matchFn = (str) => {
+      if (!str) return false;
+      const lowerStr = str.toLowerCase();
+      return isExact ? lowerStr === query : lowerStr.includes(query);
+    };
 
     const simulate = () => {
       if (!isSimulating) return;
@@ -1167,7 +1188,9 @@ function NetworkView({ data, searchQuery }) {
         }
 
         const isHovered = hoveredNode === n;
-        const isMatched = q && (n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
+        
+        // --- PENERAPAN MATCHING UNTUK MENYOROT NODE/ENTITAS ---
+        const isMatched = query && (matchFn(n.label) || matchFn(n.id));
 
         ctx.beginPath();
         ctx.arc(n.x, n.y, isHovered ? n.size + 4 : n.size, 0, Math.PI * 2);
@@ -1219,7 +1242,7 @@ function NetworkView({ data, searchQuery }) {
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [graphData, searchQuery]);
+  }, [graphData, searchParams]);
 
   const zoomCanvas = (deltaScale) => {
     const canvas = canvasRef.current;
@@ -1255,9 +1278,11 @@ function NetworkView({ data, searchQuery }) {
         {!graphData ? (
            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-xl bg-slate-900/20 z-0">
               <Network size={48} className="text-slate-600 mb-4" />
-              <p className="text-slate-400 text-center max-w-md">
+              <p className="text-slate-400 text-center max-w-md leading-relaxed">
                  Ketik nama Emiten atau Investor di kolom <b>Search</b> atas untuk mulai merender jaring network.<br/><br/>
-                 <span className="text-sm text-white font-semibold bg-blue-600/30 border border-blue-500/50 px-4 py-2 rounded-full inline-block shadow-[0_0_15px_rgba(59,130,246,0.3)]">Contoh: Ketik "GOTO" atau "PRAJOGO"</span>
+                 <span className="text-sm text-white font-medium bg-blue-600/30 border border-blue-500/50 px-4 py-2 rounded-full inline-block">
+                    Gunakan tanda kutip untuk pencarian spesifik. Contoh: <b>"WIKA"</b>
+                 </span>
               </p>
            </div>
         ) : (

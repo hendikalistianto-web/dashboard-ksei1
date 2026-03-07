@@ -17,7 +17,7 @@ const KNOWN_FOUNDERS = [
   "JOGI HENDRA ATMADJA", "KIKI BARKI", "EDDY KUSNADI SARIAATMADJA", "HUSAIN DJOJONEGORO",
   "ALEXANDER RAMLIE", "AGUS LASMONO", "HARYANTO ADIKOESOEMO", "SABANA PRAWIRAWIDJAJA",
   "BAMBANG TRIHATMODJO", "ANTHONY SALIM", "DATUK LOW TUCK KWONG", "JERRY NG", 
-  "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO"
+  "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO", "WILLIAM TANUWIJAYA" 
 ];
 
 const CATEGORY_NAMES = {
@@ -589,14 +589,36 @@ function EmitenView({ data, searchQuery }) {
 
 function InvestorView({ data, searchQuery }) {
   const [alphaFilter, setAlphaFilter] = useState('A');
+
+  // Palet warna yang lebih luas untuk memastikan keragaman warna saham
+  const EXTENDED_COLORS = useMemo(() => [
+    '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16',
+    '#ef4444', '#14b8a6', '#f43f5e', '#eab308', '#d946ef', '#0ea5e9', '#6366f1', '#a855f7',
+    '#fb923c', '#fbbf24', '#a3e635', '#4ade80', '#34d399', '#2dd4bf', '#22d3ee', '#38bdf8'
+  ], []);
+
+  // FUNGSI AJAIB: Menghasilkan warna yang akan SELALU SAMA untuk satu nama Ticker
+  const getColorForTicker = (ticker) => {
+    let hash = 0;
+    for (let i = 0; i < ticker.length; i++) {
+      hash = ticker.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return EXTENDED_COLORS[Math.abs(hash) % EXTENDED_COLORS.length];
+  };
+
   const investorGroupsArray = useMemo(() => {
     const groups = {};
     data.forEach(item => {
-      if (!groups[item.investor]) groups[item.investor] = { investor: item.investor, category: item.category, holdings: [] };
+      if (!groups[item.investor]) {
+        groups[item.investor] = { investor: item.investor, category: item.category, holdings: [], isPengendali: item.isPengendali };
+      }
       groups[item.investor].holdings.push(item);
+      if (item.isPengendali) groups[item.investor].isPengendali = true;
     });
+    
     return Object.values(groups).map(g => {
-      g.holdings.sort((a,b) => b.percentage - a.percentage);
+      // PERBAIKAN: Urutkan berdasarkan Volume (shares) agar proporsi Pie Chart sinkron
+      g.holdings.sort((a,b) => b.shares - a.shares);
       g.searchKey = `${g.investor} ${g.holdings.map(h => h.ticker).join(' ')}`.toLowerCase();
       return g;
     }).sort((a, b) => a.investor.localeCompare(b.investor));
@@ -604,7 +626,9 @@ function InvestorView({ data, searchQuery }) {
 
   const filteredInvestors = useMemo(() => {
     let items = investorGroupsArray;
-    if (searchQuery) items = items.filter(g => g.searchKey.includes(searchQuery.toLowerCase()));
+    if (searchQuery) {
+      items = items.filter(g => g.searchKey.includes(searchQuery.toLowerCase()));
+    } 
     else if (alphaFilter !== 'ALL') {
       if (alphaFilter === '#') items = items.filter(g => !/^[A-Z]/i.test(g.investor.trim()));
       else items = items.filter(g => g.investor.trim().toUpperCase().startsWith(alphaFilter));
@@ -613,23 +637,80 @@ function InvestorView({ data, searchQuery }) {
   }, [searchQuery, alphaFilter, investorGroupsArray]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <AlphabetFilter selected={alphaFilter} onChange={setAlphaFilter} />
+
+      {filteredInvestors.length === 0 && (
+        <div className="text-center py-20 text-slate-500">
+          <User size={48} className="mx-auto mb-4 opacity-20" />
+          <p>Pencarian tidak ditemukan.</p>
+        </div>
+      )}
+
       {filteredInvestors.map(group => {
-        const pieData = group.holdings.slice(0, 15).map((h, i) => ({ label: h.ticker, percentage: h.shares, color: CHART_COLORS[i % CHART_COLORS.length] }));
+        const totalVolume = group.holdings.reduce((sum, h) => sum + h.shares, 0);
+        
+        // Generate Pie Data dengan warna unik per saham
+        const pieData = group.holdings.slice(0, 15).map(h => ({ 
+          label: h.ticker, 
+          percentage: (h.shares / totalVolume) * 100, 
+          color: getColorForTicker(h.ticker) // Menggunakan pewarnaan konsisten
+        }));
+
+        if (group.holdings.length > 15) {
+          const sisaVol = group.holdings.slice(15).reduce((sum, h) => sum + h.shares, 0);
+          pieData.push({ label: 'Lainnya', percentage: (sisaVol / totalVolume) * 100, color: '#334155' });
+        }
+
         return (
           <div key={group.investor} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
             <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
-               <h2 className="text-lg font-bold text-white mb-2 text-center">{group.investor}</h2>
-               <CategoryBadge category={group.category} />
-               <div className="mt-4"><DonutChart data={pieData} size={140} /></div>
+               <h2 className="text-xl font-bold text-white mb-2 text-center leading-tight">{group.investor}</h2>
+               
+               {/* Label Kategori & Pengendali */}
+               <CategoryBadge category={group.category} isPengendali={group.isPengendali} />
+               
+               <div className="mt-6">
+                 <DonutChart data={pieData} size={140} />
+               </div>
+               
+               <div className="w-full mt-6 text-center bg-slate-800/40 py-3 rounded-xl border border-slate-700/50">
+                  <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Total Volume Portofolio</p>
+                  <p className="font-mono text-emerald-400 font-bold">{totalVolume.toLocaleString()} lbr</p>
+               </div>
             </div>
+            
             <div className="xl:w-2/3 p-6 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead><tr className="border-b border-slate-700/50 text-slate-500"><th className="pb-3">Emiten</th><th className="pb-3 text-right">Volume</th><th className="pb-3 text-right">% Kuasa</th></tr></thead>
+              <table className="w-full text-left text-sm min-w-[500px]">
+                <thead>
+                  <tr className="border-b border-slate-700/50 text-slate-500 uppercase tracking-wider text-xs">
+                    <th className="pb-3 px-2 font-medium">KODE SAHAM</th>
+                    <th className="pb-3 px-2 font-medium text-right">VOLUME PEGANG</th>
+                    <th className="pb-3 px-2 font-medium text-right">% KUASA EMITEN</th>
+                  </tr>
+                </thead>
                 <tbody>
-                  {group.holdings.map(h => (
-                    <tr key={h.id} className="border-b border-slate-800/30"><td className="py-3 font-bold text-indigo-400">{h.ticker}</td><td className="py-3 font-mono text-slate-400 text-right">{h.shares.toLocaleString()}</td><td className="py-3 font-mono text-white text-right">{h.percentage.toFixed(2)}%</td></tr>
+                  {group.holdings.map((h, idx) => (
+                    <tr key={h.id} className="border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors">
+                      <td className="py-3 px-2 flex items-center gap-3">
+                        <div 
+                          className="w-3 h-3 rounded-full shrink-0 shadow-sm" 
+                          style={{ backgroundColor: idx < 15 ? getColorForTicker(h.ticker) : '#334155' }}
+                        ></div>
+                        <div>
+                           <div className="font-bold text-indigo-400 text-base">{h.ticker}</div>
+                           <div className="text-[10px] text-slate-500 leading-tight truncate max-w-[200px]" title={h.emitenName}>
+                             {h.emitenName}
+                           </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 font-mono text-slate-300 text-right">
+                        {h.shares.toLocaleString()}
+                      </td>
+                      <td className="py-3 px-2 font-mono text-white text-right font-bold">
+                        {h.percentage.toFixed(2)}%
+                      </td>
+                    </tr>
                   ))}
                 </tbody>
               </table>

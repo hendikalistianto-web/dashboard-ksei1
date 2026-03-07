@@ -356,23 +356,50 @@ function Top10Card(props) {
              <div className="flex justify-between items-start border-b border-slate-700/50 pb-2 mb-2">
                 <div className="font-bold text-white text-sm line-clamp-1 mr-2 flex items-center gap-2">
                    <span className={`text-xs px-2 py-0.5 rounded-md bg-slate-800 ${colorClass}`}>#{i+1}</span>
-                   <span>{isCountry ? item.country : (isFreeFloat ? item.ticker : item.investor)}</span>
+                   <span title={isCountry ? item.country : (isFreeFloat ? item.name : item.investor)}>
+                     {isCountry ? item.country : (isFreeFloat ? item.ticker : item.investor)}
+                   </span>
                 </div>
-                <div className={`font-mono font-bold text-sm text-right shrink-0 truncate max-w-[120px] ${colorClass}`}>
+                <div className={`font-mono font-bold text-sm text-right shrink-0 truncate max-w-[120px] ${colorClass}`} title={isFreeFloat ? item.publicSharesVolume.toLocaleString() : item.totalShares.toLocaleString()}>
                    {isFreeFloat ? item.publicSharesVolume.toLocaleString() : item.totalShares.toLocaleString()}
+                   <span className="text-[9px] block text-slate-500 uppercase tracking-wider mt-0.5">
+                     {isFreeFloat ? "Total Lembar Publik" : "Total Lembar"}
+                   </span>
                 </div>
              </div>
              <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hide pr-1">
                 {item.holdings.map((h, j) => (
                    <div key={j} className="flex justify-between items-center text-xs bg-[#0a0f1c]/50 p-1.5 rounded">
-                      <span className={`font-bold w-12 shrink-0 ${isFreeFloat ? 'text-amber-400 truncate w-24' : 'text-blue-400'}`}>{isFreeFloat ? h.investor : h.ticker}</span>
-                      <span className="text-slate-400 font-mono text-right flex-1 truncate pr-3">{h.shares.toLocaleString()} lbr</span>
-                      <span className="text-slate-200 font-mono font-bold w-14 text-right shrink-0">{h.percentage.toFixed(2)}%</span>
+                      <span className={`font-bold w-12 shrink-0 ${isFreeFloat ? 'text-amber-400 truncate w-24' : 'text-blue-400'}`} title={isFreeFloat ? h.investor : h.ticker}>
+                        {isFreeFloat ? h.investor : h.ticker}
+                      </span>
+                      <span className="text-slate-400 font-mono text-right flex-1 truncate pr-3" title={`${h.shares.toLocaleString()} lbr`}>
+                        {h.shares.toLocaleString()} lbr
+                      </span>
+                      <span className="text-slate-200 font-mono font-bold w-14 text-right shrink-0" title={`${h.percentage.toFixed(2)}%`}>
+                        {h.percentage.toFixed(2)}%
+                      </span>
                    </div>
                 ))}
+
+                {/* --- BARIS TAMBAHAN: PUBLIK RETAIL < 1% --- */}
+                {isFreeFloat && (item.publicSisa > 0) && (
+                   <div className="flex justify-between items-center text-xs bg-emerald-900/20 border border-emerald-500/30 p-1.5 rounded mt-2">
+                      <span className="text-emerald-400 font-medium truncate w-24" title="Publik Retail (<1%)">
+                        Publik Retail &lt;1%
+                      </span>
+                      <span className="text-emerald-300/70 font-mono text-right flex-1 truncate pr-3" title={`${Math.round(item.publicSisaShares || 0).toLocaleString()} lbr`}>
+                        {Math.round(item.publicSisaShares || 0).toLocaleString()} lbr
+                      </span>
+                      <span className="text-emerald-400 font-mono font-bold w-14 text-right shrink-0" title={`${item.publicSisa.toFixed(2)}%`}>
+                        {item.publicSisa.toFixed(2)}%
+                      </span>
+                   </div>
+                )}
              </div>
           </div>
         ))}
+        {data.length === 0 && <div className="text-center text-slate-500 py-10">Data tidak tersedia.</div>}
       </div>
     </div>
   );
@@ -403,18 +430,37 @@ function DashboardView({ data }) {
       const eFF = emitenFFMap.get(d.ticker);
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(d.category.code) || (d.category.code === 'ID' && d.isPengendali);
       
+      // Mengambil total lembar saham perusahaan (100%)
       if (eFF.totalSharesInCompany === 0 && d.percentage > 0) eFF.totalSharesInCompany = d.shares / (d.percentage / 100);
-      if (isPengurang) eFF.nonPublicTotal += d.percentage; else eFF.publicHolders.push({ investor: cleanInvestorName, shares: d.shares, percentage: d.percentage });
+      
+      if (isPengurang) {
+        eFF.nonPublicTotal += d.percentage; 
+      } else {
+        eFF.publicHolders.push({ investor: cleanInvestorName, shares: d.shares, percentage: d.percentage });
+      }
     });
 
     const allInv = Array.from(invMap.values()); allInv.forEach(inv => inv.holdings.sort((a,b) => b.shares - a.shares));
     const allCountries = Array.from(cMap.values()).map(c => ({ country: c.country, totalShares: c.totalShares, holdings: Array.from(c.holdingsMap.values()).sort((a,b) => b.shares - a.shares) }));
     const categoryStats = Object.keys(catMap).map(code => ({ code, name: CATEGORY_NAMES[code], shares: catMap[code], percentage: totalAllShares > 0 ? (catMap[code] / totalAllShares) * 100 : 0 })).sort((a, b) => b.shares - a.shares);
+    
+    // --- KALKULASI SISA RETAIL YANG BENAR ---
     const allFreeFloats = Array.from(emitenFFMap.values()).map(e => {
        const ff = Math.max(0, Math.min(100, 100 - e.nonPublicTotal));
+       const detectedPublicPct = e.publicHolders.reduce((sum, h) => sum + h.percentage, 0);
        const detectedPublicShares = e.publicHolders.reduce((sum, h) => sum + h.shares, 0);
        const publicSharesVolume = e.totalSharesInCompany * (ff / 100);
-       return { ticker: e.ticker, name: e.name, freeFloat: ff, publicSharesVolume: publicSharesVolume, holdings: e.publicHolders.sort((a,b) => b.shares - a.shares) };
+       const publicSisaShares = Math.max(0, publicSharesVolume - detectedPublicShares);
+       
+       return { 
+         ticker: e.ticker, 
+         name: e.name, 
+         freeFloat: ff, 
+         publicSharesVolume: publicSharesVolume, 
+         publicSisa: Math.max(0, ff - detectedPublicPct), 
+         publicSisaShares: publicSisaShares, 
+         holdings: e.publicHolders.sort((a,b) => b.shares - a.shares) 
+       };
     });
 
     return {
@@ -460,7 +506,6 @@ function DashboardView({ data }) {
     </div>
   );
 }
-
 function EmitenView({ data, searchQuery }) {
   const [alphaFilter, setAlphaFilter] = useState('A');
 

@@ -367,12 +367,23 @@ function Top10Card(props) {
                      {isCountry ? item.country : (isFreeFloat ? item.ticker : item.investor)}
                    </span>
                 </div>
-                <div className={`font-mono font-bold text-sm text-right shrink-0 truncate max-w-[120px] ${colorClass}`} title={isFreeFloat ? item.publicSharesVolume.toLocaleString() : item.totalShares.toLocaleString()}>
-                   {isFreeFloat ? item.publicSharesVolume.toLocaleString() : item.totalShares.toLocaleString()}
-                   <span className="text-[9px] block text-slate-500 uppercase tracking-wider mt-0.5">
-                     {isFreeFloat ? "Total Lembar Publik" : "Total Lembar"}
-                   </span>
+                
+                {/* PERUBAHAN: MENAMPILKAN TOTAL TERDETEKSI & PERSENTASE DI KANAN KODE EMITEN */}
+                <div className={`text-right shrink-0 ${colorClass}`}>
+                  {isFreeFloat ? (
+                    <>
+                      <div className="font-mono font-bold text-sm">{item.totalTrackedPct.toFixed(2)}%</div>
+                      <div className="font-mono text-[10px] mt-0.5">{item.totalTrackedShares.toLocaleString()} lbr</div>
+                      <div className="text-[8px] text-slate-500 uppercase tracking-wider mt-0.5">Total Terdeteksi &ge;1%</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="font-mono font-bold text-sm">{item.totalShares.toLocaleString()}</div>
+                      <div className="text-[9px] block text-slate-500 uppercase tracking-wider mt-0.5">Total Lembar</div>
+                    </>
+                  )}
                 </div>
+
              </div>
              <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hide pr-1">
                 {item.holdings.map((h, j) => (
@@ -388,19 +399,19 @@ function Top10Card(props) {
                       </span>
                    </div>
                 ))}
+                
+                {/* PERUBAHAN: HAPUS LEMBAR SAHAM DI PUBLIK RETAIL <= 1% */}
                 {isFreeFloat && (item.publicSisa > 0) && (
-                   <div className="flex justify-between items-center text-xs bg-emerald-900/20 border border-emerald-500/30 p-1.5 rounded mt-2">
-                      <span className="text-emerald-400 font-medium truncate w-24" title="Publik Retail (<1%)">
-                        Publik Retail &lt;1%
+                   <div className="flex justify-between items-center text-xs bg-emerald-900/20 border border-emerald-500/30 p-2 rounded mt-2">
+                      <span className="text-emerald-400 font-medium" title="Publik Retail (≤1%)">
+                        Publik Retail &le;1%
                       </span>
-                      <span className="text-emerald-300/70 font-mono text-right flex-1 truncate pr-3" title={`${Math.round(item.publicSisaShares || 0).toLocaleString()} lbr`}>
-                        {Math.round(item.publicSisaShares || 0).toLocaleString()} lbr
-                      </span>
-                      <span className="text-emerald-400 font-mono font-bold w-14 text-right shrink-0" title={`${item.publicSisa.toFixed(2)}%`}>
+                      <span className="text-emerald-400 font-mono font-bold text-right" title={`${item.publicSisa.toFixed(2)}%`}>
                         {item.publicSisa.toFixed(2)}%
                       </span>
                    </div>
                 )}
+
              </div>
           </div>
         ))}
@@ -431,12 +442,27 @@ function DashboardView({ data }) {
       let code = d.category.code; if (catMap[code] === undefined) code = 'OT'; 
       catMap[code] += d.shares; totalAllShares += d.shares;
 
-      if (!emitenFFMap.has(d.ticker)) emitenFFMap.set(d.ticker, { ticker: d.ticker, name: d.emitenName, nonPublicTotal: 0, totalSharesInCompany: 0, publicHolders: [] });
+      if (!emitenFFMap.has(d.ticker)) {
+        emitenFFMap.set(d.ticker, { 
+          ticker: d.ticker, 
+          name: d.emitenName, 
+          nonPublicTotal: 0, 
+          totalSharesInCompany: 0, 
+          publicHolders: [],
+          totalTrackedShares: 0, // Kalkulasi baru
+          totalTrackedPct: 0     // Kalkulasi baru
+        });
+      }
+      
       const eFF = emitenFFMap.get(d.ticker);
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(d.category.code) || (d.category.code === 'ID' && d.isPengendali);
       
       if (eFF.totalSharesInCompany === 0 && d.percentage > 0) eFF.totalSharesInCompany = d.shares / (d.percentage / 100);
       
+      // Menambahkan seluruh data ke "Total Terdeteksi >= 1%"
+      eFF.totalTrackedShares += d.shares;
+      eFF.totalTrackedPct += d.percentage;
+
       if (isPengurang) {
         eFF.nonPublicTotal += d.percentage; 
       } else {
@@ -451,9 +477,7 @@ function DashboardView({ data }) {
     const allFreeFloats = Array.from(emitenFFMap.values()).map(e => {
        const ff = Math.max(0, Math.min(100, 100 - e.nonPublicTotal));
        const detectedPublicPct = e.publicHolders.reduce((sum, h) => sum + h.percentage, 0);
-       const detectedPublicShares = e.publicHolders.reduce((sum, h) => sum + h.shares, 0);
        const publicSharesVolume = e.totalSharesInCompany * (ff / 100);
-       const publicSisaShares = Math.max(0, publicSharesVolume - detectedPublicShares);
        
        return { 
          ticker: e.ticker, 
@@ -461,8 +485,9 @@ function DashboardView({ data }) {
          freeFloat: ff, 
          publicSharesVolume: publicSharesVolume, 
          publicSisa: Math.max(0, ff - detectedPublicPct), 
-         publicSisaShares: publicSisaShares, 
-         holdings: e.publicHolders.sort((a,b) => b.shares - a.shares) 
+         holdings: e.publicHolders.sort((a,b) => b.shares - a.shares),
+         totalTrackedShares: e.totalTrackedShares,
+         totalTrackedPct: e.totalTrackedPct
        };
     });
 
@@ -517,10 +542,18 @@ function EmitenView({ data, searchQuery }) {
     const groups = {};
     data.forEach(item => {
       if (!groups[item.ticker]) {
-        groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, holders: [], totalTracked: 0, nonPublicTotal: 0 };
+        groups[item.ticker] = { 
+          ticker: item.ticker, 
+          name: item.emitenName, 
+          holders: [], 
+          totalTracked: 0, 
+          nonPublicTotal: 0,
+          totalTrackedShares: 0 // <-- LOGIKA BARU: Variabel penyimpan total lembar saham
+        };
       }
       groups[item.ticker].holders.push(item);
       groups[item.ticker].totalTracked += item.percentage;
+      groups[item.ticker].totalTrackedShares += item.shares; // <-- LOGIKA BARU: Menjumlahkan lembar saham
 
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(item.category.code) || (item.category.code === 'ID' && item.isPengendali);
       if (isPengurang) {
@@ -573,6 +606,7 @@ function EmitenView({ data, searchQuery }) {
         return (
           <div key={group.ticker} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
             <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
+               
                <div className="text-center w-full mb-4">
                  <h2 className="text-3xl font-bold text-white tracking-tight">{group.ticker}</h2>
                  <p className="text-sm text-slate-400 mt-1 font-medium leading-snug">{group.name}</p>
@@ -580,16 +614,21 @@ function EmitenView({ data, searchQuery }) {
                
                <DonutChart data={pieData} size={140} />
                
-               <div className="w-full mt-6 space-y-2">
-                 <div className="flex justify-between text-xs">
+               {/* --- UI BARU: MENAMPILKAN LEMBAR SAHAM & PERSENTASE --- */}
+               <div className="w-full mt-6 space-y-3">
+                 <div className="flex justify-between items-center text-xs pb-3 border-b border-slate-800/60">
                    <span className="text-slate-400">Total Terdeteksi (&ge; 1%)</span>
-                   <span className="font-mono text-white font-bold">{group.totalTracked.toFixed(2)}%</span>
+                   <div className="text-right">
+                     <span className="font-mono text-white font-bold block text-sm">{group.totalTracked.toFixed(2)}%</span>
+                     <span className="font-mono text-slate-500 text-[10px] mt-0.5 block">{group.totalTrackedShares.toLocaleString()} lbr</span>
+                   </div>
                  </div>
-                 <div className="flex justify-between text-xs">
+                 <div className="flex justify-between items-center text-xs pt-1">
                    <span className="text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#334155]"></span> Free Float Publik</span>
-                   <span className="font-mono text-emerald-400 font-bold">{publicFloat.toFixed(2)}%</span>
+                   <span className="font-mono text-emerald-400 font-bold text-sm">{publicFloat.toFixed(2)}%</span>
                  </div>
                </div>
+
             </div>
             
             <div className="xl:w-2/3 p-6 overflow-x-auto">
@@ -766,8 +805,18 @@ function FreeFloatView({ data, searchQuery }) {
     const groups = {};
     data.forEach(item => {
       if (!groups[item.ticker]) {
-        groups[item.ticker] = { ticker: item.ticker, name: item.emitenName, nonPublicTotal: 0 };
+        groups[item.ticker] = { 
+          ticker: item.ticker, 
+          name: item.emitenName, 
+          nonPublicTotal: 0,
+          totalTrackedShares: 0,
+          totalTrackedPct: 0
+        };
       }
+      
+      groups[item.ticker].totalTrackedShares += item.shares;
+      groups[item.ticker].totalTrackedPct += item.percentage;
+
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(item.category.code) || item.isPengendali;
       if (isPengurang) groups[item.ticker].nonPublicTotal += item.percentage;
     });
@@ -840,7 +889,7 @@ function FreeFloatView({ data, searchQuery }) {
               <tr className="border-b border-slate-700 bg-slate-900/50 text-xs uppercase text-slate-500 tracking-wider">
                 <th className="py-4 px-6 font-medium">Kode</th>
                 <th className="py-4 px-6 font-medium">Nama Emiten</th>
-                <th className="py-4 px-6 font-medium text-right">Non-Publik / Pengendali</th>
+                <th className="py-4 px-6 font-medium text-right">Total Terdeteksi (&ge; 1%)</th>
                 <th className="py-4 px-6 font-medium text-right">Saham Publik (Float)</th>
                 <th className="py-4 px-6 font-medium">Kategori Float</th>
               </tr>
@@ -850,8 +899,14 @@ function FreeFloatView({ data, searchQuery }) {
                 <tr key={item.ticker} className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors">
                   <td className="py-4 px-6 font-bold text-white">{item.ticker}</td>
                   <td className="py-4 px-6 text-slate-300">{item.name}</td>
-                  <td className="py-4 px-6 text-right font-mono text-rose-400">{item.nonPublicTotal.toFixed(2)}%</td>
-                  <td className="py-4 px-6 text-right font-mono font-bold text-white text-lg">{item.freeFloat.toFixed(2)}%</td>
+                  
+                  {/* PERUBAHAN: MENAMPILKAN PERSENTASE DAN JUMLAH LEMBAR */}
+                  <td className="py-4 px-6 text-right">
+                    <div className="font-mono font-bold text-white text-sm">{item.totalTrackedPct.toFixed(2)}%</div>
+                    <div className="font-mono text-slate-400 text-[10px] mt-1">{item.totalTrackedShares.toLocaleString()} lbr</div>
+                  </td>
+                  
+                  <td className="py-4 px-6 text-right font-mono font-bold text-emerald-400 text-lg">{item.freeFloat.toFixed(2)}%</td>
                   <td className="py-4 px-6">
                     <span className={`inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold border ${item.categoryColor}`}>
                       {item.categoryLabel}

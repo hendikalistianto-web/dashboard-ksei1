@@ -17,7 +17,7 @@ const KNOWN_FOUNDERS = [
   "JOGI HENDRA ATMADJA", "KIKI BARKI", "EDDY KUSNADI SARIAATMADJA", "HUSAIN DJOJONEGORO",
   "ALEXANDER RAMLIE", "AGUS LASMONO", "HARYANTO ADIKOESOEMO", "SABANA PRAWIRAWIDJAJA",
   "BAMBANG TRIHATMODJO", "ANTHONY SALIM", "DATUK LOW TUCK KWONG", "JERRY NG", 
-  "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO", "WILLIAM TANUWIJAYA" 
+  "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO", "WILLIAM TANUWIJAYA"
 ];
 
 const CATEGORY_NAMES = {
@@ -62,7 +62,6 @@ function parseCSV(text) {
   let currentRow = [];
   let currentCell = '';
   let inQuotes = false;
-  
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
     if (inQuotes) {
@@ -198,12 +197,10 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // --- MENGAMBIL DATA DEFAULT DARI FOLDER PUBLIC ---
   useEffect(() => {
     const loadDefaultData = async () => {
       try {
         setIsFetchingDB(true);
-        // Mengambil file data-ksei.csv dari folder public
         const response = await fetch('/data-ksei.csv');
         if (!response.ok) {
           throw new Error("File default tidak ditemukan.");
@@ -219,11 +216,9 @@ export default function App() {
         setIsFetchingDB(false);
       }
     };
-
     loadDefaultData();
   }, []);
 
-  // --- MANUAL UPLOAD UNTUK UPDATE DATA LOKAL ---
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -280,12 +275,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] text-slate-300 font-sans flex flex-col md:flex-row overflow-hidden relative">
-      <div className="p-6 flex flex-col items-start gap-4 border-b border-slate-800/50">
+      <aside className="w-full md:w-64 bg-[#111827] border-b md:border-b-0 md:border-r border-slate-800 flex flex-col z-20 shrink-0">
+        <div className="p-6 flex flex-col items-start gap-4 border-b border-slate-800/50">
           <div className="bg-white p-2 rounded-xl shadow-lg shadow-black/20 w-full flex items-center justify-center">
             <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjowvt7ARvZePh_g5Pf_00OjAVYkkiIX_SdWspqWvZBo1qL7Ixs2qM23GZcItU0BzacX7fYyaj62ipAiu5MqgqylHQyeT_7GYOrBmtgz6ZhEyv_d9EKzNjnUJCIRR2-IS5nPWLcJrctixDFZPzciKS5Zat-fpbYCOFQ2o1xfUB91aPT5e6Ys6SFB_J8fnza/s1060/LOGO%20PNG%20transparent.png" alt="Logo" className="h-12 w-auto object-contain" />
           </div>
-          
-          {/* GANTI BAGIAN INI */}
           <div className="w-full">
             <p className="text-[11px] text-slate-300 font-semibold tracking-wide">Ownership Tracker &ge; 1%</p>
             <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
@@ -301,8 +295,6 @@ export default function App() {
               </a>
             </p>
           </div>
-          {/* SAMPAI SINI */}
-
         </div>
         <nav className="flex-1 px-4 py-4 md:py-8 space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-visible scrollbar-hide">
           <NavButton icon={<Activity size={20} />} label="Dashboard" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
@@ -396,8 +388,6 @@ function Top10Card(props) {
                       </span>
                    </div>
                 ))}
-
-                {/* --- BARIS TAMBAHAN: PUBLIK RETAIL < 1% --- */}
                 {isFreeFloat && (item.publicSisa > 0) && (
                    <div className="flex justify-between items-center text-xs bg-emerald-900/20 border border-emerald-500/30 p-1.5 rounded mt-2">
                       <span className="text-emerald-400 font-medium truncate w-24" title="Publik Retail (<1%)">
@@ -445,7 +435,6 @@ function DashboardView({ data }) {
       const eFF = emitenFFMap.get(d.ticker);
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(d.category.code) || (d.category.code === 'ID' && d.isPengendali);
       
-      // Mengambil total lembar saham perusahaan (100%)
       if (eFF.totalSharesInCompany === 0 && d.percentage > 0) eFF.totalSharesInCompany = d.shares / (d.percentage / 100);
       
       if (isPengurang) {
@@ -459,7 +448,6 @@ function DashboardView({ data }) {
     const allCountries = Array.from(cMap.values()).map(c => ({ country: c.country, totalShares: c.totalShares, holdings: Array.from(c.holdingsMap.values()).sort((a,b) => b.shares - a.shares) }));
     const categoryStats = Object.keys(catMap).map(code => ({ code, name: CATEGORY_NAMES[code], shares: catMap[code], percentage: totalAllShares > 0 ? (catMap[code] / totalAllShares) * 100 : 0 })).sort((a, b) => b.shares - a.shares);
     
-    // --- KALKULASI SISA RETAIL YANG BENAR ---
     const allFreeFloats = Array.from(emitenFFMap.values()).map(e => {
        const ff = Math.max(0, Math.min(100, 100 - e.nonPublicTotal));
        const detectedPublicPct = e.publicHolders.reduce((sum, h) => sum + h.percentage, 0);
@@ -521,6 +509,7 @@ function DashboardView({ data }) {
     </div>
   );
 }
+
 function EmitenView({ data, searchQuery }) {
   const [alphaFilter, setAlphaFilter] = useState('A');
 
@@ -533,7 +522,6 @@ function EmitenView({ data, searchQuery }) {
       groups[item.ticker].holders.push(item);
       groups[item.ticker].totalTracked += item.percentage;
 
-      // LOGIKA PENGURANG FREE FLOAT (Hanya Institusi & ID Pengendali)
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(item.category.code) || (item.category.code === 'ID' && item.isPengendali);
       if (isPengurang) {
         groups[item.ticker].nonPublicTotal += item.percentage;
@@ -569,7 +557,6 @@ function EmitenView({ data, searchQuery }) {
       )}
 
       {filteredTickers.map(group => {
-        // PERHITUNGAN FREE FLOAT YANG BENAR
         const publicFloat = Math.max(0, 100 - group.nonPublicTotal);
         
         const pieData = group.holders.slice(0, 15).map((h, i) => ({ 
@@ -586,8 +573,6 @@ function EmitenView({ data, searchQuery }) {
         return (
           <div key={group.ticker} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
             <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
-               
-               {/* MENAMPILKAN NAMA PERUSAHAAN DI BAWAH KODE */}
                <div className="text-center w-full mb-4">
                  <h2 className="text-3xl font-bold text-white tracking-tight">{group.ticker}</h2>
                  <p className="text-sm text-slate-400 mt-1 font-medium leading-snug">{group.name}</p>
@@ -650,14 +635,12 @@ function EmitenView({ data, searchQuery }) {
 function InvestorView({ data, searchQuery }) {
   const [alphaFilter, setAlphaFilter] = useState('A');
 
-  // Palet warna yang lebih luas untuk memastikan keragaman warna saham
   const EXTENDED_COLORS = useMemo(() => [
     '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16',
     '#ef4444', '#14b8a6', '#f43f5e', '#eab308', '#d946ef', '#0ea5e9', '#6366f1', '#a855f7',
     '#fb923c', '#fbbf24', '#a3e635', '#4ade80', '#34d399', '#2dd4bf', '#22d3ee', '#38bdf8'
   ], []);
 
-  // FUNGSI AJAIB: Menghasilkan warna yang akan SELALU SAMA untuk satu nama Ticker
   const getColorForTicker = (ticker) => {
     let hash = 0;
     for (let i = 0; i < ticker.length; i++) {
@@ -677,7 +660,6 @@ function InvestorView({ data, searchQuery }) {
     });
     
     return Object.values(groups).map(g => {
-      // PERBAIKAN: Urutkan berdasarkan Volume (shares) agar proporsi Pie Chart sinkron
       g.holdings.sort((a,b) => b.shares - a.shares);
       g.searchKey = `${g.investor} ${g.holdings.map(h => h.ticker).join(' ')}`.toLowerCase();
       return g;
@@ -710,11 +692,10 @@ function InvestorView({ data, searchQuery }) {
       {filteredInvestors.map(group => {
         const totalVolume = group.holdings.reduce((sum, h) => sum + h.shares, 0);
         
-        // Generate Pie Data dengan warna unik per saham
         const pieData = group.holdings.slice(0, 15).map(h => ({ 
           label: h.ticker, 
           percentage: (h.shares / totalVolume) * 100, 
-          color: getColorForTicker(h.ticker) // Menggunakan pewarnaan konsisten
+          color: getColorForTicker(h.ticker)
         }));
 
         if (group.holdings.length > 15) {
@@ -726,14 +707,10 @@ function InvestorView({ data, searchQuery }) {
           <div key={group.investor} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
             <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
                <h2 className="text-xl font-bold text-white mb-2 text-center leading-tight">{group.investor}</h2>
-               
-               {/* Label Kategori & Pengendali */}
                <CategoryBadge category={group.category} isPengendali={group.isPengendali} />
-               
                <div className="mt-6">
                  <DonutChart data={pieData} size={140} />
                </div>
-               
                <div className="w-full mt-6 text-center bg-slate-800/40 py-3 rounded-xl border border-slate-700/50">
                   <p className="text-xs text-slate-400 mb-1 uppercase tracking-wider">Total Volume Portofolio</p>
                   <p className="font-mono text-emerald-400 font-bold">{totalVolume.toLocaleString()} lbr</p>
@@ -899,40 +876,31 @@ function FreeFloatView({ data, searchQuery }) {
 
 function NetworkView({ data, searchQuery }) {
   const canvasRef = useRef(null);
-  const transformRef = useRef({ x: 0, y: 0, k: 1 }); // k adalah skala (zoom)
+  const transformRef = useRef({ x: 0, y: 0, k: 1 });
 
   const graphData = useMemo(() => {
-    // Hanya proses jika ada minimal 2 huruf pencarian untuk mencegah lag
     if (!searchQuery || searchQuery.length < 2) return null;
     const q = searchQuery.toLowerCase();
     
-    // Cari data langsung yang cocok
     const directRows = data.filter(d => d.ticker.toLowerCase().includes(q) || d.investor.toLowerCase().includes(q) || d.emitenName.toLowerCase().includes(q));
     if (directRows.length === 0) return null;
 
-    // Kumpulkan entitas yang terlibat
     const involvedTickers = new Set(directRows.map(d => d.ticker));
     const involvedInvestors = new Set(directRows.map(d => d.investor));
 
-    // Tarik semua koneksi yang melibatkan entitas tersebut
     let expandedRows = data.filter(d => involvedTickers.has(d.ticker) || involvedInvestors.has(d.investor));
-    
-    // Batasi maksimum node agar physics engine tidak membuat browser macet
     expandedRows = expandedRows.slice(0, 150); 
 
     const nodeMap = new Map();
     const links = [];
 
     expandedRows.forEach(r => {
-      // Emiten Nodes
       if (!nodeMap.has(r.ticker)) {
         nodeMap.set(r.ticker, { id: r.ticker, label: r.ticker, type: 'emiten', size: 20 });
       }
-      // Investor Nodes (Ukuran bervariasi berdasarkan persentase kepemilikan)
       if (!nodeMap.has(r.investor)) {
         nodeMap.set(r.investor, { id: r.investor, label: r.investor, type: 'investor', size: Math.max(12, Math.min(30, r.percentage / 1.5)) });
       }
-      // Link (Koneksi)
       links.push({ source: r.investor, target: r.ticker, value: r.percentage });
     });
 
@@ -953,10 +921,8 @@ function NetworkView({ data, searchQuery }) {
     window.addEventListener('resize', resize);
     resize();
 
-    // Reset zoom & pan setiap kali data baru dimuat
     transformRef.current = { x: 0, y: 0, k: 1 };
 
-    // Inisialisasi posisi awal (menyebar secara acak di tengah)
     let nodes = graphData.nodes.map(n => ({
       ...n,
       x: canvas.width / 2 + (Math.random() - 0.5) * 300,
@@ -975,7 +941,6 @@ function NetworkView({ data, searchQuery }) {
     let isPanning = false;
     let startPanX = 0, startPanY = 0;
     
-    // Status simulasi fisika (auto-sleep)
     let isSimulating = true;
     const wakeupSimulation = () => {
       if (!isSimulating) {
@@ -984,22 +949,18 @@ function NetworkView({ data, searchQuery }) {
       }
     };
 
-    // --- EVENT LISTENERS UNTUK INTERAKSI MOUSE ---
     canvas.onmousedown = (e) => {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       const t = transformRef.current;
       
-      // Hitung koordinat klik relatif terhadap zoom (k) dan pan (x,y)
       const simX = (mx - t.x) / t.k;
       const simY = (my - t.y) / t.k;
 
-      // Cek apakah klik mengenai node
       draggedNode = nodes.find(n => Math.hypot(n.x - simX, n.y - simY) < n.size + 10);
       
       if (!draggedNode) {
-        // Jika tidak kena node, berarti mulai Panning (geser layar)
         isPanning = true;
         startPanX = mx - t.x;
         startPanY = my - t.y;
@@ -1033,7 +994,6 @@ function NetworkView({ data, searchQuery }) {
         draggedNode.vy = 0;
         wakeupSimulation();
       } else {
-        // Cek Hover untuk menampilkan persentase & garis merah tebal
         const prevHovered = hoveredNode;
         hoveredNode = nodes.find(n => Math.hypot(n.x - simX, n.y - simY) < n.size + 10);
         canvas.style.cursor = hoveredNode ? 'pointer' : (isPanning ? 'grabbing' : 'grab');
@@ -1044,37 +1004,30 @@ function NetworkView({ data, searchQuery }) {
     canvas.onmouseup = () => { draggedNode = null; isPanning = false; canvas.style.cursor = hoveredNode ? 'pointer' : 'grab'; };
     canvas.onmouseleave = () => { draggedNode = null; hoveredNode = null; isPanning = false; canvas.style.cursor = 'default'; };
 
-    // ZOOM DENGAN SCROLL MOUSE
     canvas.onwheel = (e) => {
       e.preventDefault();
       const zoomIntensity = 0.1;
       const delta = e.deltaY > 0 ? -zoomIntensity : zoomIntensity;
       const t = transformRef.current;
       
-      // Batas zoom: minimal 0.1x, maksimal 5x
       const newK = Math.max(0.1, Math.min(5, t.k * (1 + delta)));
-      
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       
-      // Sesuaikan pergeseran (pan) agar zoom mengarah ke posisi kursor mouse
       t.x = mx - (mx - t.x) * (newK / t.k);
       t.y = my - (my - t.y) * (newK / t.k);
       t.k = newK;
-      
       wakeupSimulation();
     };
 
     const q = searchQuery ? searchQuery.toLowerCase() : "";
 
-    // --- ENGINE SIMULASI FISIKA (D3-force style) ---
     const simulate = () => {
       if (!isSimulating) return;
       const t = transformRef.current;
       let totalVelocity = 0;
 
-      // 1. Gaya Tolak Menolak (Repulsion) antar node
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           if(nodes[i] === draggedNode || nodes[j] === draggedNode) continue;
@@ -1092,19 +1045,17 @@ function NetworkView({ data, searchQuery }) {
         }
       }
 
-      // 2. Gaya Tarik Menarik berdasarkan Links (Spring)
       simLinks.forEach(link => {
         const { sourceNode: source, targetNode: target } = link;
         if (!source || !target) return;
         const dx = target.x - source.x;
         const dy = target.y - source.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = (dist - 140) * 0.05; // Jarak ideal antar koneksi: 140px
+        const force = (dist - 140) * 0.05; 
         if(source !== draggedNode) { source.vx += (dx / dist) * force; source.vy += (dy / dist) * force; }
         if(target !== draggedNode) { target.vx -= (dx / dist) * force; target.vy -= (dy / dist) * force; }
       });
 
-      // 3. Gravitasi ke Tengah Canvas (Gravity)
       nodes.forEach(n => {
         if(n !== draggedNode) {
           const dx = (canvas.width / 2) - n.x;
@@ -1114,48 +1065,39 @@ function NetworkView({ data, searchQuery }) {
         }
       });
 
-      // --- MENGGAMBAR KE CANVAS ---
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      // Terapkan Zoom dan Geser layar
       ctx.translate(t.x, t.y);
       ctx.scale(t.k, t.k);
 
-      // Gambar Garis Koneksi (Links)
       simLinks.forEach(link => {
-        // Cek apakah mouse sedang menyorot node yang terhubung
         const isHovered = hoveredNode === link.sourceNode || hoveredNode === link.targetNode;
         
         ctx.beginPath();
         ctx.moveTo(link.sourceNode.x, link.sourceNode.y);
         ctx.lineTo(link.targetNode.x, link.targetNode.y);
         
-        // Garis MERAH jelas jika disorot, abu-abu tipis jika tidak
         ctx.lineWidth = isHovered ? Math.max(2, link.value * 0.15) : Math.max(0.5, link.value * 0.05);
         ctx.strokeStyle = isHovered ? 'rgba(239, 68, 68, 1)' : 'rgba(148, 163, 184, 0.2)';
         ctx.stroke();
 
-        // Gambar Teks Persentase di Tengah Garis jika Disorot
         if (isHovered) {
           const midX = (link.sourceNode.x + link.targetNode.x) / 2;
           const midY = (link.sourceNode.y + link.targetNode.y) / 2;
           
-          // Background hitam kecil untuk teks persentase
           ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
           const textWidth = ctx.measureText(`${link.value.toFixed(2)}%`).width + 8;
           ctx.roundRect(midX - textWidth/2, midY - 12, textWidth, 16, 4);
           ctx.fill();
 
-          ctx.fillStyle = '#fca5a5'; // Warna teks persentase (Merah Muda Terang)
+          ctx.fillStyle = '#fca5a5'; 
           ctx.font = 'bold 11px monospace';
           ctx.textAlign = 'center';
           ctx.fillText(`${link.value.toFixed(2)}%`, midX, midY);
         }
       });
 
-      // Gambar Titik Entitas (Nodes)
       nodes.forEach(n => {
-        // Terapkan kecepatan dan friksi (gesekan)
         if (n !== draggedNode) {
           n.vx = Math.max(-8, Math.min(8, n.vx)) * 0.85;
           n.vy = Math.max(-8, Math.min(8, n.vy)) * 0.85;
@@ -1165,23 +1107,19 @@ function NetworkView({ data, searchQuery }) {
         }
 
         const isHovered = hoveredNode === n;
-        // Cek apakah node ini yang diketik di kolom pencarian
         const isMatched = q && (n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
 
         ctx.beginPath();
-        // Node sedikit membesar saat disorot
         ctx.arc(n.x, n.y, isHovered ? n.size + 4 : n.size, 0, Math.PI * 2);
 
-        // PEWARNAAN NODE: Turunan warna jika di-Search
         if (n.type === 'emiten') {
-          ctx.fillStyle = isMatched ? '#93c5fd' : '#3b82f6'; // Biru Muda jika dicari, Biru Normal jika tidak
+          ctx.fillStyle = isMatched ? '#93c5fd' : '#3b82f6'; 
           ctx.strokeStyle = isMatched ? '#ffffff' : '#1e3a8a';
         } else {
-          ctx.fillStyle = isMatched ? '#fde047' : '#f59e0b'; // Kuning Terang jika dicari, Oranye jika tidak
+          ctx.fillStyle = isMatched ? '#fde047' : '#f59e0b'; 
           ctx.strokeStyle = isMatched ? '#ffffff' : '#92400e';
         }
 
-        // Efek Bercahaya (Glow) jika dicari atau disorot
         if (isMatched || isHovered) {
           ctx.shadowColor = n.type === 'emiten' ? '#60a5fa' : '#fbbf24';
           ctx.shadowBlur = isMatched ? 25 : 15;
@@ -1193,15 +1131,13 @@ function NetworkView({ data, searchQuery }) {
 
         ctx.fill();
         ctx.stroke();
-        ctx.shadowBlur = 0; // Matikan glow untuk teks
+        ctx.shadowBlur = 0; 
 
-        // Gambar Teks Label Node
         ctx.fillStyle = isMatched || isHovered ? '#ffffff' : '#cbd5e1';
         ctx.font = isMatched || isHovered ? 'bold 12px sans-serif' : '10px sans-serif';
         ctx.textAlign = 'center';
         
         let displayLabel = n.label;
-        // Persingkat nama investor yang terlalu panjang jika sedang tidak disorot
         if(n.type === 'investor' && displayLabel.length > 20 && !isHovered && !isMatched) {
            displayLabel = displayLabel.substring(0, 18) + '...';
         }
@@ -1210,7 +1146,6 @@ function NetworkView({ data, searchQuery }) {
 
       ctx.restore();
 
-      // AUTO-SLEEP: Hentikan kalkulasi fisika jika titik-titik sudah tenang (diam)
       if (totalVelocity < 0.5 && !draggedNode && !isPanning && !hoveredNode) {
           isSimulating = false;
       } else {
@@ -1218,7 +1153,7 @@ function NetworkView({ data, searchQuery }) {
       }
     };
     
-    simulate(); // Mulai loop animasi
+    simulate();
 
     return () => {
       window.removeEventListener('resize', resize);
@@ -1226,7 +1161,6 @@ function NetworkView({ data, searchQuery }) {
     };
   }, [graphData, searchQuery]);
 
-  // FUNGSI KONTROL TOMBOL ZOOM
   const zoomCanvas = (deltaScale) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1237,7 +1171,6 @@ function NetworkView({ data, searchQuery }) {
     t.x = cx - (cx - t.x) * (newK / t.k);
     t.y = cy - (cy - t.y) * (newK / t.k);
     t.k = newK;
-    // Paksa update canvas
     canvas.dispatchEvent(new MouseEvent('mousemove')); 
   };
 
@@ -1270,10 +1203,8 @@ function NetworkView({ data, searchQuery }) {
         ) : (
            <div className="absolute inset-0 bg-[#0a0f1c] rounded-2xl overflow-hidden border border-slate-700/50 shadow-inner group mt-20 mx-6 mb-6">
               
-              {/* CANVAS UTAMA */}
               <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing" />
               
-              {/* LEGEND & INFO SUDUT KANAN ATAS */}
               <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300 pointer-events-none shadow-lg">
                  {graphData.nodes.length} Entitas | {graphData.links.length} Koneksi
                  <br/>
@@ -1281,7 +1212,6 @@ function NetworkView({ data, searchQuery }) {
                  <span className="text-amber-400 font-bold inline-block mt-1">● Investor</span>
               </div>
 
-              {/* KONTROL ZOOM KANAN BAWAH */}
               <div className="absolute bottom-4 right-4 flex flex-col gap-2 transition-opacity">
                 <button onClick={handleZoomIn} className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 shadow-lg hover:text-white transition-colors" title="Zoom In (+)">
                   <ZoomIn size={20} />
@@ -1294,7 +1224,6 @@ function NetworkView({ data, searchQuery }) {
                 </button>
               </div>
 
-              {/* PETUNJUK PENGGUNAAN KIRI BAWAH */}
               <div className="absolute bottom-4 left-4 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur px-2.5 py-1.5 rounded-md pointer-events-none border border-slate-700">
                 Scroll u/ Zoom • Drag u/ Geser • Hover u/ Info Detail
               </div>
@@ -1346,7 +1275,6 @@ function StatCard({ title, value, icon, color }) {
 
 function CategoryBadge({ category, isPengendali, small }) {
   const { code, name } = category;
-  // Menentukan warna styling berdasarkan map warna
   const colorCode = CAT_COLOR_MAP[code] ? CAT_COLOR_MAP[code].split('-')[1] : 'slate';
   const style = `bg-${colorCode}-500/10 text-${colorCode}-400 border-${colorCode}-500/20`;
   const sizeClass = small ? 'text-[10px] px-2 py-0.5' : 'text-xs px-2.5 py-1';
@@ -1356,8 +1284,6 @@ function CategoryBadge({ category, isPengendali, small }) {
       <span className={`inline-flex items-center rounded-md font-semibold border ${sizeClass} ${style}`}>
         {code} - {name}
       </span>
-      
-      {/* LABEL PENGENDALI MUNCUL DI SINI */}
       {code === 'ID' && isPengendali && (
         <span 
           className={`inline-flex items-center gap-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold ${sizeClass}`} 

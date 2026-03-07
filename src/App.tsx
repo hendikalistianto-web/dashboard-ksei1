@@ -449,8 +449,8 @@ function DashboardView({ data }) {
           nonPublicTotal: 0, 
           totalSharesInCompany: 0, 
           publicHolders: [],
-          totalTrackedShares: 0, // Kalkulasi baru
-          totalTrackedPct: 0     // Kalkulasi baru
+          totalTrackedShares: 0,
+          totalTrackedPct: 0
         });
       }
       
@@ -459,7 +459,6 @@ function DashboardView({ data }) {
       
       if (eFF.totalSharesInCompany === 0 && d.percentage > 0) eFF.totalSharesInCompany = d.shares / (d.percentage / 100);
       
-      // Menambahkan seluruh data ke "Total Terdeteksi >= 1%"
       eFF.totalTrackedShares += d.shares;
       eFF.totalTrackedPct += d.percentage;
 
@@ -510,13 +509,19 @@ function DashboardView({ data }) {
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {categoryStats.map(stat => (
-            <div key={stat.code} className="bg-slate-900/50 rounded-xl border border-slate-700/50 p-4">
-              <div className="flex justify-between items-start mb-2">
+            <div key={stat.code} className="bg-slate-900/50 rounded-xl border border-slate-700/50 p-4 hover:border-slate-500 transition-colors">
+              <div className="flex justify-between items-start mb-3">
                 <span className="font-bold text-slate-300 text-sm truncate pr-2">{stat.name}</span>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CAT_COLOR_MAP[stat.code]} bg-opacity-20 text-white`}>{stat.code}</span>
               </div>
-              <div className="text-xl font-bold text-white mb-1">{stat.percentage.toFixed(2)}%</div>
-              <div className="w-full bg-slate-800 h-1.5 rounded-full mt-3 overflow-hidden">
+              
+              {/* --- PERUBAHAN: LEMBAR SAHAM DI ATAS PERSENTASE --- */}
+              <div className="text-[11px] text-slate-400 font-mono truncate mb-0.5" title={`${stat.shares.toLocaleString()} lbr`}>
+                {stat.shares.toLocaleString()} lbr
+              </div>
+              <div className="text-2xl font-bold text-white mb-1 leading-none">{stat.percentage.toFixed(2)}%</div>
+              
+              <div className="w-full bg-slate-800 h-1.5 rounded-full mt-4 overflow-hidden">
                 <div className={`${CAT_COLOR_MAP[stat.code]} h-1.5 rounded-full`} style={{ width: `${stat.percentage}%` }}></div>
               </div>
             </div>

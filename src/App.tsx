@@ -97,11 +97,12 @@ function processData(parsedRows) {
   const idHoldingsCount = {}; 
   let lastEmitenName = "";
   
+  let rawInvestorSet = new Set(); 
+  
   let isNewFormat = false;
   let headerRow = [];
   let headerIdx = -1;
   
-  // Mencari baris yang mengandung Header
   for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
     if (parsedRows[i][0] === 'DATE' || parsedRows[i][1] === 'SHARE_CODE') {
       isNewFormat = true;
@@ -111,11 +112,10 @@ function processData(parsedRows) {
     }
   }
 
-  // DYNAMIC HEADER MAPPING (Deteksi posisi kolom secara otomatis)
   let colTicker = 1, colEmiten = 2, colInvestor = 3, colCat = 4, colLF = 5, colDom = 7, colShares = 10, colPct = 11;
   if (isNewFormat) {
     const findCol = (name, defaultIdx) => {
-      const idx = headerRow.findIndex(h => h.trim().toUpperCase() === name);
+      const idx = headerRow.findIndex(h => h && h.trim().toUpperCase() === name);
       return idx !== -1 ? idx : defaultIdx;
     };
     colTicker = findCol('SHARE_CODE', 1);
@@ -145,7 +145,6 @@ function processData(parsedRows) {
       investor = row[colInvestor]?.trim() || "";
       categoryCode = row[colCat]?.trim().toUpperCase() || "OT";
       
-      // Translasi kode baru Domestik (D) & Foreign (F) KSEI ke format lama Lokal (L) & Asing (A)
       let lf = row[colLF]?.trim().toUpperCase() || "";
       if (lf === 'D') lf = 'L'; 
       if (lf === 'F') lf = 'A'; 
@@ -172,6 +171,8 @@ function processData(parsedRows) {
 
     if (!ticker || ticker.toLowerCase() === "kode efek" || ticker.length < 3 || !investor) continue;
     if (!CATEGORY_NAMES[categoryCode]) categoryCode = 'OT';
+
+    rawInvestorSet.add(investor);
 
     rawData.push({
       id: `row-${index}`, 
@@ -209,7 +210,9 @@ function processData(parsedRows) {
     if (row.percentage >= 1.0) finalData.push(row);
   }
 
-  return finalData.sort((a,b) => b.percentage - a.percentage);
+  const sortedData = finalData.sort((a,b) => b.percentage - a.percentage);
+  sortedData.rawInvestorCount = rawInvestorSet.size; 
+  return sortedData;
 }
 
 export default function App() {
@@ -274,6 +277,7 @@ export default function App() {
 
   const totalEmiten = new Set(data.map(d => d.ticker)).size;
   const totalInvestor = new Set(data.map(d => d.investor)).size;
+  const rawTotalInvestor = data.rawInvestorCount || totalInvestor;
 
   const renderContent = () => {
     if (isFetchingDB) {
@@ -368,9 +372,10 @@ export default function App() {
              </div>
           )}
           {activeTab === 'dashboard' && isUploaded && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <StatCard title="Total Emiten Terlacak" value={totalEmiten} icon={<Building2 />} color="text-emerald-400" />
-              <StatCard title="Total Investor Berpengaruh" value={totalInvestor} icon={<Users />} color="text-indigo-400" />
+              <StatCard title="Investor Berpengaruh (≥1%)" value={totalInvestor} icon={<User />} color="text-indigo-400" />
+              <StatCard title="Semua Data Investor (Raw)" value={rawTotalInvestor} icon={<Users />} color="text-amber-400" />
             </div>
           )}
           <div className="max-w-7xl mx-auto h-full">
@@ -398,7 +403,6 @@ function Top10Card(props) {
                    </span>
                 </div>
                 
-                {/* PERUBAHAN: MENAMPILKAN TOTAL TERDETEKSI & PERSENTASE DI KANAN KODE EMITEN */}
                 <div className={`text-right shrink-0 ${colorClass}`}>
                   {isFreeFloat ? (
                     <>
@@ -430,7 +434,6 @@ function Top10Card(props) {
                    </div>
                 ))}
                 
-                {/* PERUBAHAN: HAPUS LEMBAR SAHAM DI PUBLIK RETAIL <= 1% */}
                 {isFreeFloat && (item.publicSisa > 0) && (
                    <div className="flex justify-between items-center text-xs bg-emerald-900/20 border border-emerald-500/30 p-2 rounded mt-2">
                       <span className="text-emerald-400 font-medium" title="Publik Retail (≤1%)">
@@ -545,7 +548,6 @@ function DashboardView({ data }) {
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CAT_COLOR_MAP[stat.code]} bg-opacity-20 text-white`}>{stat.code}</span>
               </div>
               
-              {/* --- PERUBAHAN: LEMBAR SAHAM DI ATAS PERSENTASE --- */}
               <div className="text-[11px] text-slate-400 font-mono truncate mb-0.5" title={`${stat.shares.toLocaleString()} lbr`}>
                 {stat.shares.toLocaleString()} lbr
               </div>
@@ -583,12 +585,12 @@ function EmitenView({ data, searchQuery }) {
           holders: [], 
           totalTracked: 0, 
           nonPublicTotal: 0,
-          totalTrackedShares: 0 // <-- LOGIKA BARU: Variabel penyimpan total lembar saham
+          totalTrackedShares: 0 
         };
       }
       groups[item.ticker].holders.push(item);
       groups[item.ticker].totalTracked += item.percentage;
-      groups[item.ticker].totalTrackedShares += item.shares; // <-- LOGIKA BARU: Menjumlahkan lembar saham
+      groups[item.ticker].totalTrackedShares += item.shares; 
 
       const isPengurang = ['CP', 'IB', 'FD', 'OT'].includes(item.category.code) || (item.category.code === 'ID' && item.isPengendali);
       if (isPengurang) {
@@ -649,7 +651,6 @@ function EmitenView({ data, searchQuery }) {
                
                <DonutChart data={pieData} size={140} />
                
-               {/* --- UI BARU: MENAMPILKAN LEMBAR SAHAM & PERSENTASE --- */}
                <div className="w-full mt-6 space-y-3">
                  <div className="flex justify-between items-center text-xs pb-3 border-b border-slate-800/60">
                    <span className="text-slate-400">Total Terdeteksi (&ge; 1%)</span>
@@ -935,7 +936,6 @@ function FreeFloatView({ data, searchQuery }) {
                   <td className="py-4 px-6 font-bold text-white">{item.ticker}</td>
                   <td className="py-4 px-6 text-slate-300">{item.name}</td>
                   
-                  {/* PERUBAHAN: MENAMPILKAN PERSENTASE DAN JUMLAH LEMBAR */}
                   <td className="py-4 px-6 text-right">
                     <div className="font-mono font-bold text-white text-sm">{item.totalTrackedPct.toFixed(2)}%</div>
                     <div className="font-mono text-slate-400 text-[10px] mt-1">{item.totalTrackedShares.toLocaleString()} lbr</div>
@@ -968,12 +968,9 @@ function NetworkView({ data, searchQuery }) {
   const canvasRef = useRef(null);
   const transformRef = useRef({ x: 0, y: 0, k: 1 });
 
-  // --- LOGIKA BARU: MENDETEKSI EXACT MATCH ("...") ATAU PARTIAL MATCH ---
   const searchParams = useMemo(() => {
     const raw = searchQuery ? searchQuery.trim() : "";
-    // Cek apakah diapit oleh tanda kutip ganda
     const isExact = raw.startsWith('"') && raw.endsWith('"') && raw.length > 2;
-    // Bersihkan tanda kutip jika exact match, biarkan utuh jika tidak
     const query = isExact ? raw.slice(1, -1).toLowerCase() : raw.toLowerCase();
     return { isExact, query };
   }, [searchQuery]);
@@ -982,7 +979,6 @@ function NetworkView({ data, searchQuery }) {
     const { isExact, query } = searchParams;
     if (!query || query.length < 2) return null;
     
-    // Fungsi pintar untuk mencocokkan data
     const matchFn = (str) => {
       if (!str) return false;
       const lowerStr = str.toLowerCase();
@@ -1219,7 +1215,6 @@ function NetworkView({ data, searchQuery }) {
 
         const isHovered = hoveredNode === n;
         
-        // --- PENERAPAN MATCHING UNTUK MENYOROT NODE/ENTITAS ---
         const isMatched = query && (matchFn(n.label) || matchFn(n.id));
 
         ctx.beginPath();

@@ -98,14 +98,39 @@ function processData(parsedRows) {
   let lastEmitenName = "";
   
   let isNewFormat = false;
+  let headerRow = [];
+  let headerIdx = -1;
+  
+  // Mencari baris yang mengandung Header
   for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
     if (parsedRows[i][0] === 'DATE' || parsedRows[i][1] === 'SHARE_CODE') {
       isNewFormat = true;
+      headerRow = parsedRows[i];
+      headerIdx = i;
       break;
     }
   }
 
-  for (let index = 1; index < parsedRows.length; index++) {
+  // DYNAMIC HEADER MAPPING (Deteksi posisi kolom secara otomatis)
+  let colTicker = 1, colEmiten = 2, colInvestor = 3, colCat = 4, colLF = 5, colDom = 7, colShares = 10, colPct = 11;
+  if (isNewFormat) {
+    const findCol = (name, defaultIdx) => {
+      const idx = headerRow.findIndex(h => h.trim().toUpperCase() === name);
+      return idx !== -1 ? idx : defaultIdx;
+    };
+    colTicker = findCol('SHARE_CODE', 1);
+    colEmiten = findCol('ISSUER_NAME', 2);
+    colInvestor = findCol('INVESTOR_NAME', 3);
+    colCat = findCol('INVESTOR_TYPE', 4);
+    colLF = findCol('LOCAL_FOREIGN', 5);
+    colDom = findCol('DOMICILE', 7);
+    colShares = findCol('TOTAL_HOLDING_SHARES', 10);
+    colPct = findCol('PERCENTAGE', 11);
+  }
+
+  let startIndex = headerIdx !== -1 ? headerIdx + 1 : 1;
+
+  for (let index = startIndex; index < parsedRows.length; index++) {
     const row = parsedRows[index];
     if (row.length < 5) continue; 
 
@@ -115,15 +140,20 @@ function processData(parsedRows) {
     const cleanNum = (str) => parseFloat(String(str || "").replace(/,/g, '')) || 0;
 
     if (isNewFormat) {
-      if (row[0] === 'DATE' || row[1] === 'SHARE_CODE') continue;
-      ticker = row[1]?.trim() || "";
-      emitenName = row[2]?.trim() || "";
-      investor = row[3]?.trim() || "";
-      categoryCode = row[4]?.trim().toUpperCase() || "OT";
-      localForeign = row[5]?.trim().toUpperCase() || "";
-      domicile = row[7]?.trim().toUpperCase() || "";
-      shares = cleanNum(row[11]);
-      percentage = cleanNum(row[12]);
+      ticker = row[colTicker]?.trim() || "";
+      emitenName = row[colEmiten]?.trim() || "";
+      investor = row[colInvestor]?.trim() || "";
+      categoryCode = row[colCat]?.trim().toUpperCase() || "OT";
+      
+      // Translasi kode baru Domestik (D) & Foreign (F) KSEI ke format lama Lokal (L) & Asing (A)
+      let lf = row[colLF]?.trim().toUpperCase() || "";
+      if (lf === 'D') lf = 'L'; 
+      if (lf === 'F') lf = 'A'; 
+      localForeign = lf;
+
+      domicile = row[colDom]?.trim().toUpperCase() || "";
+      shares = cleanNum(row[colShares]);
+      percentage = cleanNum(row[colPct]);
       prevPercentage = percentage; 
     } else {
       const no = parseInt(row[0]);

@@ -20,19 +20,20 @@ const KNOWN_FOUNDERS = [
   "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO", "WILLIAM TANUWIJAYA"
 ];
 
-// Fallback standar KSEI jika file eksternal gagal dimuat
-const DEFAULT_KSEI_39_CATEGORIES = [
-  "Individual", "Corporate", "Mutual Funds", "Pension Funds", "Insurance", 
-  "Securities Company", "Financial Institutional", "Foundation", "Government", 
-  "Sovereign Wealth Fund", "Central Bank", "State Owned Enterprises", 
-  "State Owned Company", "Exchange Traded Funds", "Investment Manager", 
-  "Hedge Fund", "Brokerage Firms", "Trustee Bank", "Private Bank", 
-  "Investment Advisors", "Investment Fund Selling Agent", "Venture Capital", 
-  "Private Equity", "Holding Company", "Asset Management", "Family Office", 
-  "Endowment Fund", "Cooperative", "Retail Investor", "High Net Worth Individual", 
-  "Islamic Financial Institution", "Sharia Mutual Fund", "Sharia Bank", 
-  "Sharia Insurance", "Microfinance", "Credit Union", "Philanthropy", 
-  "Corporate Employee", "Other"
+// --- 39 KATEGORI INVESTOR ABSOLUT (Sesuai Permintaan) ---
+const KSEI_39_CATEGORIES = [
+  "BANK", "GOVERNMENT", "PRIVATE EQUITY", "TRUSTEE BANK", "VENTURE CAPITAL", 
+  "PRIVATE BANK", "EXCHANGE TRADED FUNDS", "INVESTMENT MANAGER", "INVESTMENT ADVISORS", 
+  "BROKERAGE FIRMS", "HEDGE FUND", "SOVEREIGN WEALTH FUND", 
+  "CAPITAL MARKET SUPPORTING INSTITUTIONS AND PROFESSIONS", 
+  "COMMANDITAIRE VENNOOTSCHAP (CV) OR LIMITED PARTNERSHIP", "FIRM", 
+  "INVESTMENT FUND SELLING AGENT", "PEER TO PEER LENDING", "PERMANENT ESTABLISHMENT", 
+  "SOLE PROPRIETORSHIP", "CORPORATE", "ASSOCIATION/SOCIAL ORGANIZATIONS", 
+  "STATE OWNED ENTERPRISES", "CENTRAL BANK", "STATE OWNED COMPANY", "DIOCESE", 
+  "CONFERENCE", "CONGREGATION", "COOPERATIVES", "INTERNATIONAL ORGANIZATION", 
+  "POLITICAL PARTIES", "PARTNERSHIP", "EDUCATIONAL INSTITUTION", "MUTUAL FUNDS (MF)", 
+  "SECURITIES COMPANY (SC)", "PENSION FUNDS (PF)", "FINANCIAL INSTITUTIONAL (IB)", 
+  "INSURANCE (IS)", "FOUNDATION (FD)", "INDIVIDUAL (ID)"
 ];
 
 // --- HIMPUNAN KLASIFIKASI MSCI ---
@@ -42,8 +43,9 @@ const SET_G = new Set([
 ]);
 
 const SET_F = new Set([
-  "MUTUAL FUNDS", "MUTUAL FUND", "EXCHANGE TRADED FUNDS", "PENSION FUNDS", 
-  "INSURANCE", "INVESTMENT MANAGER", "HEDGE FUND", "SECURITIES COMPANY", 
+  "MUTUAL FUNDS (MF)", "MUTUAL FUNDS", "MUTUAL FUND", "EXCHANGE TRADED FUNDS", "PENSION FUNDS (PF)", 
+  "PENSION FUNDS", "INSURANCE (IS)", "INSURANCE", "INVESTMENT MANAGER", "HEDGE FUND", 
+  "SECURITIES COMPANY (SC)", "SECURITIES COMPANY", "FINANCIAL INSTITUTIONAL (IB)", 
   "FINANCIAL INSTITUTIONAL", "BROKERAGE FIRMS", "TRUSTEE BANK", 
   "PRIVATE BANK", "INVESTMENT ADVISORS", "INVESTMENT FUND SELLING AGENT"
 ]);
@@ -63,6 +65,26 @@ function getColorForString(str) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   return EXTENDED_COLORS[Math.abs(hash) % EXTENDED_COLORS.length];
+}
+
+// Format tulisan menjadi Title Case untuk tampilan UI yang lebih rapi
+function toTitleCase(str) {
+  return str.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+// Memetakan kategori mentah dari KSEI ke daftar 39 kategori absolut
+function normalizeCategory(rawCat) {
+  if (!rawCat) return "Other";
+  const rawUpper = rawCat.toUpperCase().trim();
+  
+  for (const cat of KSEI_39_CATEGORIES) {
+    // Menghapus tanda kurung untuk pencocokan. Contoh: "MUTUAL FUNDS (MF)" -> "MUTUAL FUNDS"
+    const baseCat = cat.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    if (rawUpper === baseCat || rawUpper.includes(baseCat)) {
+      return cat; 
+    }
+  }
+  return toTitleCase(rawCat);
 }
 
 function parseCSV(text) {
@@ -98,42 +120,6 @@ function parseCSV(text) {
     currentRow.push(currentCell); rows.push(currentRow);
   }
   return rows;
-}
-
-// Parser khusus membaca struktur mendatar dari Klasifikasi 39 Jenis Investor.csv
-function parseInvestorCategories(parsedRows) {
-  const categories = [];
-  if (parsedRows.length < 2) return DEFAULT_KSEI_39_CATEGORIES;
-  
-  // Cari baris header utama (baris yang mengandung 'DATE')
-  let headerRow = null;
-  for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
-    if (parsedRows[i][0] && parsedRows[i][0].trim().toUpperCase() === 'DATE') {
-      headerRow = parsedRows[i];
-      break;
-    }
-  }
-
-  if (!headerRow) return DEFAULT_KSEI_39_CATEGORIES;
-
-  // Nama kategori berada setelah kolom DATE, SHARE CODE, ISSUER NAME (Mulai index 3)
-  for (let i = 3; i < headerRow.length; i++) {
-    const cell = headerRow[i]?.trim();
-    if (cell && cell.toUpperCase() !== "TOTAL SCRIPLESS" && cell.toUpperCase() !== "TOTAL") {
-      // 1. Bersihkan kode berkurung di akhir string seperti (MF), (IB)
-      let cleanCell = cell.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      
-      // 2. Ubah format menjadi Title Case (Huruf besar di awal kata) 
-      // Agar "MUTUAL FUNDS" berubah menjadi "Mutual Funds" supaya match dengan data-ksei.csv
-      cleanCell = cleanCell.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-      
-      if (!categories.includes(cleanCell)) {
-        categories.push(cleanCell);
-      }
-    }
-  }
-  
-  return categories.length > 0 ? categories : DEFAULT_KSEI_39_CATEGORIES;
 }
 
 function processData(parsedRows) {
@@ -188,13 +174,9 @@ function processData(parsedRows) {
       emitenName = row[colEmiten]?.trim() || "";
       investor = row[colInvestor]?.trim() || "";
       
-      // Sinkronkan Category Name dengan Title Case hasil parser file klasifikasi 
+      // Sinkronkan Category Name ke 39 Kategori Mutlak
       let catStr = row[colCat]?.trim() || "";
-      if (catStr.length > 0) {
-        categoryName = catStr.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-      } else {
-        categoryName = "Other";
-      }
+      categoryName = normalizeCategory(catStr);
       
       let lf = row[colLF]?.trim().toUpperCase() || "";
       if (lf === 'D') lf = 'L'; 
@@ -221,7 +203,7 @@ function processData(parsedRows) {
     if (!ticker || ticker.toLowerCase() === "kode efek" || ticker.length < 3 || !investor) continue;
 
     const upperCat = categoryName.toUpperCase();
-    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
+    if (upperCat === 'INDIVIDUAL (ID)' || upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
       if (percentage >= 5.0) {
         if (!idHoldingsCount[investor]) idHoldingsCount[investor] = new Set();
         idHoldingsCount[investor].add(ticker);
@@ -241,7 +223,7 @@ function processData(parsedRows) {
     let isPengurang = false;
     const upperCat = row.categoryName.toUpperCase();
 
-    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
+    if (upperCat === 'INDIVIDUAL (ID)' || upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
       const numCompanies = idHoldingsCount[row.investor]?.size || 0;
       const isVerifiedFounder = KNOWN_FOUNDERS.some(f => row.investor.toUpperCase().includes(f));
       if (row.percentage >= 20 || numCompanies > 2 || isVerifiedFounder) {
@@ -274,7 +256,6 @@ function processData(parsedRows) {
 
 export default function App() {
   const [data, setData] = useState([]);
-  const [dynamicCategories, setDynamicCategories] = useState(DEFAULT_KSEI_39_CATEGORIES);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -293,20 +274,11 @@ export default function App() {
       try {
         setIsFetchingDB(true);
         
-        // Fetch paralel asinkronus ke kedua berkas di folder public Vercel
-        const [resKsei, resCategories] = await Promise.allSettled([
-          fetch('/data-ksei.csv'),
-          fetch(encodeURI('/Klasifikasi 39 Jenis Investor.csv'))
-        ]);
+        // HANYA memanggil data-ksei.csv untuk mencegah error Vercel
+        const response = await fetch('/data-ksei.csv');
 
-        if (resCategories.status === 'fulfilled' && resCategories.value.ok) {
-          const catText = await resCategories.value.text();
-          const parsedCat = parseInvestorCategories(parseCSV(catText));
-          setDynamicCategories(parsedCat);
-        }
-
-        if (resKsei.status === 'fulfilled' && resKsei.value.ok) {
-          const text = await resKsei.value.text();
+        if (response.ok) {
+          const text = await response.text();
           const mappedData = processData(parseCSV(text));
           setData(mappedData);
           setIsUploaded(true);
@@ -370,12 +342,12 @@ export default function App() {
     );
     
     switch (activeTab) {
-      case 'dashboard': return <DashboardView data={data} dynamicCategories={dynamicCategories} />;
+      case 'dashboard': return <DashboardView data={data} />;
       case 'emiten': return <EmitenView data={data} searchQuery={debouncedQuery} />;
       case 'investor': return <InvestorView data={data} searchQuery={debouncedQuery} />;
       case 'freefloat': return <FreeFloatView data={data} searchQuery={debouncedQuery} />;
       case 'network': return <NetworkView data={data} searchQuery={debouncedQuery} />;
-      default: return <DashboardView data={data} dynamicCategories={dynamicCategories} />;
+      default: return <DashboardView data={data} />;
     }
   };
 
@@ -525,7 +497,7 @@ function Top10Card(props) {
   );
 }
 
-function DashboardView({ data, dynamicCategories }) {
+function DashboardView({ data }) {
   if (data.length === 0) return null;
 
   const { topIndividu, topInstitusi, topForeign, topLocal, topCountry, categoryStats, topFreeFloat } = useMemo(() => {
@@ -533,8 +505,9 @@ function DashboardView({ data, dynamicCategories }) {
     const catMap = {};
     let totalAllShares = 0;
 
-    dynamicCategories.forEach(cat => {
-      catMap[cat] = 0;
+    // Memastikan 39 kategori semuanya ada (walaupun volumenya 0)
+    KSEI_39_CATEGORIES.forEach(cat => {
+      catMap[toTitleCase(cat)] = 0;
     });
 
     data.forEach(d => {
@@ -548,8 +521,8 @@ function DashboardView({ data, dynamicCategories }) {
       if (!c.holdingsMap.has(d.ticker)) c.holdingsMap.set(d.ticker, { ticker: d.ticker, shares: 0, percentage: 0 });
       const h = c.holdingsMap.get(d.ticker); h.shares += d.shares; h.percentage += d.percentage;
 
-      let catName = d.categoryName; 
-      if (!catMap[catName]) catMap[catName] = 0;
+      let catName = toTitleCase(d.categoryName); 
+      if (catMap[catName] === undefined) catMap[catName] = 0;
       catMap[catName] += d.shares; 
       totalAllShares += d.shares;
 
@@ -614,7 +587,7 @@ function DashboardView({ data, dynamicCategories }) {
     const isIndividual = (type) => {
       if(!type) return false;
       const t = type.toUpperCase();
-      return t === 'INDIVIDUAL' || t === 'INDIVIDU' || t === 'ID';
+      return t.includes('INDIVIDUAL') || t.includes('INDIVIDU');
     };
 
     return {
@@ -626,13 +599,13 @@ function DashboardView({ data, dynamicCategories }) {
       topFreeFloat: allFreeFloats.sort((a,b) => b.publicSharesVolume - a.publicSharesVolume).slice(0, 10),
       categoryStats
     };
-  }, [data, dynamicCategories]);
+  }, [data]);
 
   return (
     <div className="space-y-6 animate-in fade-in pb-10">
       <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 shadow-lg mb-6">
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2 border-b border-slate-700/50 pb-3">
-          <PieChart size={24} className="text-blue-500" /> Distribusi Klasifikasi Investor Dinamis
+          <PieChart size={24} className="text-blue-500" /> Distribusi 39 Kategori Investor Mutlak
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-h-[500px] overflow-y-auto scrollbar-hide pr-2">
           {categoryStats.map(stat => {

@@ -272,10 +272,10 @@ export default function App() {
       try {
         setIsFetchingDB(true);
         
-        // Fetch paralel asinkronus ke kedua berkas di folder public
+        // Menggunakan encodeURI untuk menghindari masalah spasi pada nama file di server Vercel
         const [resKsei, resCategories] = await Promise.allSettled([
           fetch('/data-ksei.csv'),
-          fetch('/Klasifikasi 39 Jenis Investor.csv')
+          fetch(encodeURI('/Klasifikasi 39 Jenis Investor.csv'))
         ]);
 
         if (resCategories.status === 'fulfilled' && resCategories.value.ok) {
@@ -700,7 +700,8 @@ function EmitenView({ data, searchQuery }) {
 
       {filteredTickers.map(group => {
         const rawFF = Math.max(0, Math.min(100, 100 - group.nonPublicTotal));
-        let msciFF = rawFF tracking-tight;
+        let msciFF = rawFF; // <- KESALAHAN SINTAKS TELAH DIPERBAIKI DI BARIS INI
+        
         if (rawFF >= 15.0) {
           msciFF = Math.round(rawFF / 5) * 5;
         } else {

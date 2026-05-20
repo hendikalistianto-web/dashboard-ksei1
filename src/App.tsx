@@ -20,6 +20,21 @@ const KNOWN_FOUNDERS = [
   "PATRICK WALUJO", "BOENJAMIN SETIAWAN", "TAHIR", "CILIANDRA FANGIONO", "WILLIAM TANUWIJAYA"
 ];
 
+// Fallback standar KSEI jika file eksternal gagal dimuat
+const DEFAULT_KSEI_39_CATEGORIES = [
+  "Individual", "Corporate", "Mutual Funds", "Pension Funds", "Insurance", 
+  "Securities Company", "Financial Institutional", "Foundation", "Government", 
+  "Sovereign Wealth Fund", "Central Bank", "State Owned Enterprises", 
+  "State Owned Company", "Exchange Traded Funds", "Investment Manager", 
+  "Hedge Fund", "Brokerage Firms", "Trustee Bank", "Private Bank", 
+  "Investment Advisors", "Investment Fund Selling Agent", "Venture Capital", 
+  "Private Equity", "Holding Company", "Asset Management", "Family Office", 
+  "Endowment Fund", "Cooperative", "Retail Investor", "High Net Worth Individual", 
+  "Islamic Financial Institution", "Sharia Mutual Fund", "Sharia Bank", 
+  "Sharia Insurance", "Microfinance", "Credit Union", "Philanthropy", 
+  "Corporate Employee", "Other"
+];
+
 // --- HIMPUNAN KLASIFIKASI MSCI ---
 const SET_G = new Set([
   "GOVERNMENT", "SOVEREIGN WEALTH FUND", "CENTRAL BANK", 
@@ -39,6 +54,8 @@ const EXTENDED_COLORS = [
   '#fb923c', '#fbbf24', '#a3e635', '#4ade80', '#34d399', '#2dd4bf', '#22d3ee', '#38bdf8'
 ];
 
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+
 function getColorForString(str) {
   if (!str) return '#334155';
   let hash = 0;
@@ -46,19 +63,6 @@ function getColorForString(str) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
   return EXTENDED_COLORS[Math.abs(hash) % EXTENDED_COLORS.length];
-}
-
-function getCategoryFallback(investor) {
-  const inv = (investor || "").toUpperCase();
-  if (/(REKSA DANA|REKSADANA|MUTUAL FUND|UNIT TRUST|ASSET MANAGEMENT)/.test(inv)) return 'MUTUAL FUNDS';
-  if (/(ASURANSI|INSURANCE|LIFE|ASSURANCE)/.test(inv)) return 'INSURANCE';
-  if (/(DANA PENSIUN|PENSION|BPJS|TASPEN|JAMSOSTEK|ASABRI)/.test(inv)) return 'PENSION FUNDS';
-  if (/(BANK|BPD|BUT )/.test(inv)) return 'PRIVATE BANK';
-  if (/(SEKURITAS|SECURITIES|BROKER)/.test(inv)) return 'SECURITIES COMPANY';
-  if (/(YAYASAN|FOUNDATION)/.test(inv)) return 'FOUNDATION';
-  if (/(REPUBLIK|NEGARA|GOVERNMENT|MINISTRY|KEMENTERIAN)/.test(inv)) return 'GOVERNMENT';
-  if (/(PT\.|PT |LTD|LIMITED|CORP|INC\.|TBK|B\.V\.|PTE|HOLDING|INVESTMENT|GROUP|NV |S\.A\.|LLC)/.test(inv)) return 'CORPORATE';
-  return 'INDIVIDUAL';
 }
 
 function parseCSV(text) {
@@ -94,6 +98,27 @@ function parseCSV(text) {
     currentRow.push(currentCell); rows.push(currentRow);
   }
   return rows;
+}
+
+// Parser khusus file Klasifikasi Jenis Investor dengan validasi struktur data
+function parseInvestorCategories(parsedRows) {
+  const categories = [];
+  if (parsedRows.length <= 1) return DEFAULT_KSEI_39_CATEGORIES;
+  
+  let colIdx = 0;
+  const firstRowStr = parsedRows[0][0]?.toUpperCase() || "";
+  if (firstRowStr.includes("KATEGORI") || firstRowStr.includes("INVESTOR") || firstRowStr.includes("TYPE")) {
+    colIdx = 0;
+  }
+
+  for (let i = 1; i < parsedRows.length; i++) {
+    if (!parsedRows[i] || parsedRows[i].length === 0) continue;
+    const cell = parsedRows[i][colIdx]?.trim();
+    if (cell && !categories.includes(cell) && cell !== "") {
+      categories.push(cell);
+    }
+  }
+  return categories.length > 0 ? categories : DEFAULT_KSEI_39_CATEGORIES;
 }
 
 function processData(parsedRows) {
@@ -140,7 +165,7 @@ function processData(parsedRows) {
     const row = parsedRows[index];
     if (row.length < 5) continue; 
 
-    let ticker = "", emitenName = "", investor = "", categoryName = "OTHER", localForeign = "", domicile = "";
+    let ticker = "", emitenName = "", investor = "", categoryName = "Other", localForeign = "", domicile = "";
     let shares = 0, percentage = 0;
 
     if (isNewFormat) {
@@ -148,7 +173,7 @@ function processData(parsedRows) {
       emitenName = row[colEmiten]?.trim() || "";
       investor = row[colInvestor]?.trim() || "";
       let catStr = row[colCat]?.trim() || "";
-      categoryName = catStr.length > 0 ? catStr : "OTHER";
+      categoryName = catStr.length > 0 ? catStr : "Other";
       
       let lf = row[colLF]?.trim().toUpperCase() || "";
       if (lf === 'D') lf = 'L'; 
@@ -165,7 +190,7 @@ function processData(parsedRows) {
       emitenName = row[2]?.trim() || lastEmitenName;
       lastEmitenName = emitenName;
       investor = row[4]?.trim() || row[5]?.trim() || row[3]?.trim() || "";
-      categoryName = getCategoryFallback(investor);
+      categoryName = "Other";
       domicile = row[9]?.trim().toUpperCase() || "";
       localForeign = row[12]?.trim().toUpperCase() || "";
       shares = cleanNum(row[17]);
@@ -174,9 +199,8 @@ function processData(parsedRows) {
 
     if (!ticker || ticker.toLowerCase() === "kode efek" || ticker.length < 3 || !investor) continue;
 
-    // Kalkulasi jumlah emiten yang dimiliki ID
     const upperCat = categoryName.toUpperCase();
-    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU') {
+    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
       if (percentage >= 5.0) {
         if (!idHoldingsCount[investor]) idHoldingsCount[investor] = new Set();
         idHoldingsCount[investor].add(ticker);
@@ -191,14 +215,12 @@ function processData(parsedRows) {
 
   const finalData = [];
   
-  // PENENTUAN STATUS PENGENDALI & PENGURANG FREE FLOAT (LOGIKA MSCI)
   validRows.forEach(row => {
     let isPengendali = false;
     let isPengurang = false;
     const upperCat = row.categoryName.toUpperCase();
 
-    // 1. Cek Pengendali (Hanya untuk Kategori Individu)
-    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU') {
+    if (upperCat === 'INDIVIDUAL' || upperCat === 'INDIVIDU' || upperCat === 'ID') {
       const numCompanies = idHoldingsCount[row.investor]?.size || 0;
       const isVerifiedFounder = KNOWN_FOUNDERS.some(f => row.investor.toUpperCase().includes(f));
       if (row.percentage >= 20 || numCompanies > 2 || isVerifiedFounder) {
@@ -206,13 +228,11 @@ function processData(parsedRows) {
       }
     }
 
-    // 2. Klasifikasi Himpunan MSCI KSEI
     if (SET_G.has(upperCat)) {
-      isPengurang = true; // Selalu strategis/non-free float
+      isPengurang = true; 
     } else if (SET_F.has(upperCat)) {
-      isPengurang = isPengendali; // Free float, KECUALI jika dia insider
+      isPengurang = isPengendali; 
     } else {
-      // Himpunan C (Corporate/Lainnya)
       if (row.percentage >= 5.0 || isPengendali) {
         isPengurang = true;
       }
@@ -227,12 +247,13 @@ function processData(parsedRows) {
   });
 
   const sortedData = finalData.sort((a,b) => b.percentage - a.percentage);
-  sortedData.totalDataRow = validRows.length; // Mengambil jumlah data mentah sesungguhnya
+  sortedData.totalDataRow = validRows.length; 
   return sortedData;
 }
 
 export default function App() {
   const [data, setData] = useState([]);
+  const [dynamicCategories, setDynamicCategories] = useState(DEFAULT_KSEI_39_CATEGORIES);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchInput, setSearchInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -250,14 +271,28 @@ export default function App() {
     const loadDefaultData = async () => {
       try {
         setIsFetchingDB(true);
-        const response = await fetch('/data-ksei.csv');
-        if (!response.ok) {
-          throw new Error("File default tidak ditemukan.");
+        
+        // Fetch paralel asinkronus ke kedua berkas di folder public
+        const [resKsei, resCategories] = await Promise.allSettled([
+          fetch('/data-ksei.csv'),
+          fetch('/Klasifikasi 39 Jenis Investor.csv')
+        ]);
+
+        if (resCategories.status === 'fulfilled' && resCategories.value.ok) {
+          const catText = await resCategories.value.text();
+          const parsedCat = parseInvestorCategories(parseCSV(catText));
+          setDynamicCategories(parsedCat);
         }
-        const text = await response.text();
-        const mappedData = processData(parseCSV(text));
-        setData(mappedData);
-        setIsUploaded(true);
+
+        if (resKsei.status === 'fulfilled' && resKsei.value.ok) {
+          const text = await resKsei.value.text();
+          const mappedData = processData(parseCSV(text));
+          setData(mappedData);
+          setIsUploaded(true);
+        } else {
+          throw new Error("File data-ksei.csv default tidak ditemukan.");
+        }
+        
       } catch (error) {
         console.error("Gagal memuat data default:", error);
         setIsUploaded(false);
@@ -308,18 +343,18 @@ export default function App() {
       <div className="mb-6 bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 flex flex-col items-start justify-between">
           <h3 className="text-blue-400 font-bold text-lg mb-2">Sistem Siap Digunakan</h3>
           <p className="text-sm text-slate-400 max-w-2xl">
-            Sistem tidak menemukan file default di Cloud Vercel. Silakan klik tombol <b>"Upload Data KSEI"</b> untuk memuat file.
+            Sistem tidak menemukan file default di host. Silakan klik tombol <b>"Upload Data KSEI"</b> untuk memuat berkas lokal.
           </p>
       </div>
     );
     
     switch (activeTab) {
-      case 'dashboard': return <DashboardView data={data} />;
+      case 'dashboard': return <DashboardView data={data} dynamicCategories={dynamicCategories} />;
       case 'emiten': return <EmitenView data={data} searchQuery={debouncedQuery} />;
       case 'investor': return <InvestorView data={data} searchQuery={debouncedQuery} />;
       case 'freefloat': return <FreeFloatView data={data} searchQuery={debouncedQuery} />;
       case 'network': return <NetworkView data={data} searchQuery={debouncedQuery} />;
-      default: return <DashboardView data={data} />;
+      default: return <DashboardView data={data} dynamicCategories={dynamicCategories} />;
     }
   };
 
@@ -391,7 +426,7 @@ export default function App() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
               <StatCard title="Total Emiten Terlacak" value={totalEmiten.toLocaleString()} icon={<Building2 />} color="text-emerald-400" />
               <StatCard title="Investor Berpengaruh (≥1%)" value={totalInvestor.toLocaleString()} icon={<User />} color="text-indigo-400" />
-              <StatCard title="Total Data" value={rawTotalDataRow.toLocaleString()} icon={<Layers />} color="text-amber-400" />
+              <StatCard title="Total Data (Raw)" value={rawTotalDataRow.toLocaleString()} icon={<Layers />} color="text-amber-400" />
             </div>
           )}
           <div className="max-w-7xl mx-auto h-full">
@@ -469,12 +504,17 @@ function Top10Card(props) {
   );
 }
 
-function DashboardView({ data }) {
+function DashboardView({ data, dynamicCategories }) {
   if (data.length === 0) return null;
+
   const { topIndividu, topInstitusi, topForeign, topLocal, topCountry, categoryStats, topFreeFloat } = useMemo(() => {
     const invMap = new Map(); const cMap = new Map(); const emitenFFMap = new Map();
     const catMap = {};
     let totalAllShares = 0;
+
+    dynamicCategories.forEach(cat => {
+      catMap[cat] = 0;
+    });
 
     data.forEach(d => {
       const cleanInvestorName = d.investor.trim().toUpperCase().replace(/\s+/g, ' ');
@@ -505,7 +545,6 @@ function DashboardView({ data }) {
       }
       
       const eFF = emitenFFMap.get(d.ticker);
-      
       if (eFF.totalSharesInCompany === 0 && d.percentage > 0) eFF.totalSharesInCompany = d.shares / (d.percentage / 100);
       
       eFF.totalTrackedShares += d.shares;
@@ -520,7 +559,12 @@ function DashboardView({ data }) {
 
     const allInv = Array.from(invMap.values()); allInv.forEach(inv => inv.holdings.sort((a,b) => b.shares - a.shares));
     const allCountries = Array.from(cMap.values()).map(c => ({ country: c.country, totalShares: c.totalShares, holdings: Array.from(c.holdingsMap.values()).sort((a,b) => b.shares - a.shares) }));
-    const categoryStats = Object.keys(catMap).map(name => ({ name, shares: catMap[name], percentage: totalAllShares > 0 ? (catMap[name] / totalAllShares) * 100 : 0 })).sort((a, b) => b.shares - a.shares);
+    
+    const categoryStats = Object.keys(catMap).map(name => ({ 
+      name, 
+      shares: catMap[name], 
+      percentage: totalAllShares > 0 ? (catMap[name] / totalAllShares) * 100 : 0 
+    })).sort((a, b) => b.shares - a.shares);
     
     const allFreeFloats = Array.from(emitenFFMap.values()).map(e => {
        const rawFF = Math.max(0, Math.min(100, 100 - e.nonPublicTotal));
@@ -546,7 +590,11 @@ function DashboardView({ data }) {
        };
     });
 
-    const isIndividual = (type) => type.toUpperCase() === 'INDIVIDUAL' || type.toUpperCase() === 'INDIVIDU';
+    const isIndividual = (type) => {
+      if(!type) return false;
+      const t = type.toUpperCase();
+      return t === 'INDIVIDUAL' || t === 'INDIVIDU' || t === 'ID';
+    };
 
     return {
       topIndividu: allInv.filter(i => isIndividual(i.type)).sort((a,b) => b.totalShares - a.totalShares).slice(0, 10),
@@ -557,13 +605,13 @@ function DashboardView({ data }) {
       topFreeFloat: allFreeFloats.sort((a,b) => b.publicSharesVolume - a.publicSharesVolume).slice(0, 10),
       categoryStats
     };
-  }, [data]);
+  }, [data, dynamicCategories]);
 
   return (
     <div className="space-y-6 animate-in fade-in pb-10">
       <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 shadow-lg mb-6">
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2 border-b border-slate-700/50 pb-3">
-          <PieChart size={24} className="text-blue-500" /> Distribusi Kategori
+          <PieChart size={24} className="text-blue-500" /> Distribusi Klasifikasi Investor Dinamis
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 max-h-[500px] overflow-y-auto scrollbar-hide pr-2">
           {categoryStats.map(stat => {
@@ -586,7 +634,7 @@ function DashboardView({ data }) {
         </div>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-        <Top10Card title="Top 10 Public Float" icon={<Layers size={20} className="text-emerald-400"/>} colorClass="text-emerald-400" data={topFreeFloat} isFreeFloat={true} />
+        <Top10Card title="Top 10 Public Float (FIF)" icon={<Layers size={20} className="text-emerald-400"/>} colorClass="text-emerald-400" data={topFreeFloat} isFreeFloat={true} />
         <Top10Card title="Top 10 Individu" icon={<User size={20} className="text-amber-500"/>} colorClass="text-amber-400" data={topIndividu} />
         <Top10Card title="Top 10 Institusi" icon={<Building2 size={20} className="text-blue-500"/>} colorClass="text-blue-400" data={topInstitusi} />
         <Top10Card title="Top 10 Foreign (Asing)" icon={<Globe size={20} className="text-emerald-500"/>} colorClass="text-emerald-400" data={topForeign} />
@@ -652,7 +700,12 @@ function EmitenView({ data, searchQuery }) {
 
       {filteredTickers.map(group => {
         const rawFF = Math.max(0, Math.min(100, 100 - group.nonPublicTotal));
-        let msciFF = rawFF >= 15.0 ? Math.round(rawFF / 5) * 5 : Math.round(rawFF);
+        let msciFF = rawFF tracking-tight;
+        if (rawFF >= 15.0) {
+          msciFF = Math.round(rawFF / 5) * 5;
+        } else {
+          msciFF = Math.round(rawFF);
+        }
         
         const pieData = group.holders.slice(0, 15).map((h, i) => ({ 
           label: h.investor, 
@@ -668,7 +721,6 @@ function EmitenView({ data, searchQuery }) {
         return (
           <div key={group.ticker} className="bg-[#151e2f] border border-slate-800 rounded-2xl flex flex-col xl:flex-row overflow-hidden shadow-lg mb-6">
             <div className="xl:w-1/3 p-6 bg-slate-900/30 flex flex-col items-center border-b xl:border-b-0 xl:border-r border-slate-800">
-               
                <div className="text-center w-full mb-4">
                  <h2 className="text-3xl font-bold text-white tracking-tight">{group.ticker}</h2>
                  <p className="text-sm text-slate-400 mt-1 font-medium leading-snug">{group.name}</p>
@@ -685,11 +737,10 @@ function EmitenView({ data, searchQuery }) {
                    </div>
                  </div>
                  <div className="flex justify-between items-center text-xs pt-1">
-                   <span className="text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#334155]"></span> Free Float (FIF)</span>
+                   <span className="text-slate-400 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#334155]"></span> Free Float Publik (FIF)</span>
                    <span className="font-mono text-emerald-400 font-bold text-sm">{msciFF.toFixed(2)}%</span>
                  </div>
                </div>
-
             </div>
             
             <div className="xl:w-2/3 p-6 overflow-x-auto">
@@ -872,11 +923,10 @@ function FreeFloatView({ data, searchQuery }) {
     return Object.values(groups).map(g => {
       const rawFF = Math.max(0, Math.min(100, 100 - g.nonPublicTotal));
       g.freeFloat = rawFF >= 15.0 ? Math.round(rawFF / 5) * 5 : Math.round(rawFF);
-
       g.searchKey = `${g.ticker} ${g.name}`.toLowerCase(); 
       
       if (g.freeFloat <= 5.0) {
-        g.categoryLabel = "Low Free Float (\u2264 5%)";
+        g.categoryLabel = "Low Free Float (≤ 5%)";
         g.categoryColor = "bg-rose-500/10 text-rose-400 border-rose-500/20";
         g.catCode = 'LOW';
       } else if (g.freeFloat < 15.0) {
@@ -966,7 +1016,7 @@ function FreeFloatView({ data, searchQuery }) {
               {filteredItems.length === 0 && (
                 <tr>
                   <td colSpan="5" className="py-12 text-center text-slate-500">
-                    Tidak ada emiten yang sesuai dengan pencarian atau filter.
+                    Tidak ada emiten yang sesuai dengan kriteria filter.
                   </td>
                 </tr>
               )}
@@ -1032,6 +1082,7 @@ function NetworkView({ data, searchQuery }) {
     let animationFrameId;
 
     const resize = () => {
+      if (!canvas.parentElement) return;
       canvas.width = canvas.parentElement.clientWidth;
       canvas.height = canvas.parentElement.clientHeight;
     };
@@ -1310,22 +1361,21 @@ function NetworkView({ data, searchQuery }) {
              <Network size={24} className="text-indigo-400" />
              Ownership Network Map
            </h2>
-           <p className="text-sm text-slate-400 mt-1">Peta interaktif hubungan kepemilikan saham.</p>
+           <p className="text-sm text-slate-400 mt-1">Peta interaktif analisis rantai kemitraan modal.</p>
         </div>
         
         {!graphData ? (
            <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-700/50 rounded-xl bg-slate-900/20 z-0">
-              <Network size={48} className="text-slate-600 mb-4" />
-              <p className="text-slate-400 text-center max-w-md leading-relaxed">
-                 Ketik nama Emiten atau Investor di kolom <b>Search</b> atas untuk mulai merender jaring network.<br/><br/>
-                 <span className="text-sm text-white font-medium bg-blue-600/30 border border-blue-500/50 px-4 py-2 rounded-full inline-block">
-                    Gunakan tanda kutip untuk pencarian spesifik. Contoh: <b>"WIKA"</b>
+             <Network size={48} className="text-slate-600 mb-4" />
+             <p className="text-slate-400 text-center max-w-md leading-relaxed">
+                 Masukkan kode Efek / nama investor di filter pencarian atas untuk memvisualisasikan kluster.<br/><br/>
+                 <span className="text-sm text-white font-medium bg-blue-600/30 border border-blue-500/50 px-4 py-2 rounded-full inline-block shadow-[0_0_15px_rgba(59,130,246,0.3)]">
+                    Gunakan kutip ganda untuk pencarian mutlak, ex: <b>"BBCA"</b>
                  </span>
-              </p>
+             </p>
            </div>
         ) : (
            <div className="absolute inset-0 bg-[#0a0f1c] rounded-2xl overflow-hidden border border-slate-700/50 shadow-inner group mt-20 mx-6 mb-6">
-              
               <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing" />
               
               <div className="absolute top-4 right-4 bg-slate-900/80 backdrop-blur px-3 py-2 rounded-lg border border-slate-700 text-xs text-slate-300 pointer-events-none shadow-lg">
@@ -1348,7 +1398,7 @@ function NetworkView({ data, searchQuery }) {
               </div>
 
               <div className="absolute bottom-4 left-4 text-[10px] text-slate-400 bg-slate-900/60 backdrop-blur px-2.5 py-1.5 rounded-md pointer-events-none border border-slate-700">
-                Scroll u/ Zoom • Drag u/ Geser • Hover u/ Info Detail
+                Scroll u/ Zoom • Drag Node u/ Menggeser • Hover Jalur u/ Persentase
               </div>
            </div>
         )}
@@ -1411,7 +1461,7 @@ function CategoryBadge({ categoryName, isPengendali, small }) {
       {isPengendali && (
         <span 
           className={`inline-flex items-center gap-1 rounded-md bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold ${sizeClass}`} 
-          title="Kriteria Pengendali: >20% saham, atau >5% di 3+ emiten, atau Founder"
+          title="Kriteria Pengendali: >20% saham, atau >5% di 3+ emiten, atau Founder Utama"
         >
           <ShieldAlert size={small ? 10 : 12} />
           Pengendali

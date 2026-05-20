@@ -100,24 +100,39 @@ function parseCSV(text) {
   return rows;
 }
 
-// Parser khusus file Klasifikasi Jenis Investor dengan validasi struktur data
+// Parser khusus membaca struktur mendatar dari Klasifikasi 39 Jenis Investor.csv
 function parseInvestorCategories(parsedRows) {
   const categories = [];
-  if (parsedRows.length <= 1) return DEFAULT_KSEI_39_CATEGORIES;
+  if (parsedRows.length < 2) return DEFAULT_KSEI_39_CATEGORIES;
   
-  let colIdx = 0;
-  const firstRowStr = parsedRows[0][0]?.toUpperCase() || "";
-  if (firstRowStr.includes("KATEGORI") || firstRowStr.includes("INVESTOR") || firstRowStr.includes("TYPE")) {
-    colIdx = 0;
-  }
-
-  for (let i = 1; i < parsedRows.length; i++) {
-    if (!parsedRows[i] || parsedRows[i].length === 0) continue;
-    const cell = parsedRows[i][colIdx]?.trim();
-    if (cell && !categories.includes(cell) && cell !== "") {
-      categories.push(cell);
+  // Cari baris header utama (baris yang mengandung 'DATE')
+  let headerRow = null;
+  for (let i = 0; i < Math.min(5, parsedRows.length); i++) {
+    if (parsedRows[i][0] && parsedRows[i][0].trim().toUpperCase() === 'DATE') {
+      headerRow = parsedRows[i];
+      break;
     }
   }
+
+  if (!headerRow) return DEFAULT_KSEI_39_CATEGORIES;
+
+  // Nama kategori berada setelah kolom DATE, SHARE CODE, ISSUER NAME (Mulai index 3)
+  for (let i = 3; i < headerRow.length; i++) {
+    const cell = headerRow[i]?.trim();
+    if (cell && cell.toUpperCase() !== "TOTAL SCRIPLESS" && cell.toUpperCase() !== "TOTAL") {
+      // 1. Bersihkan kode berkurung di akhir string seperti (MF), (IB)
+      let cleanCell = cell.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      
+      // 2. Ubah format menjadi Title Case (Huruf besar di awal kata) 
+      // Agar "MUTUAL FUNDS" berubah menjadi "Mutual Funds" supaya match dengan data-ksei.csv
+      cleanCell = cleanCell.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      
+      if (!categories.includes(cleanCell)) {
+        categories.push(cleanCell);
+      }
+    }
+  }
+  
   return categories.length > 0 ? categories : DEFAULT_KSEI_39_CATEGORIES;
 }
 
@@ -172,8 +187,14 @@ function processData(parsedRows) {
       ticker = row[colTicker]?.trim() || "";
       emitenName = row[colEmiten]?.trim() || "";
       investor = row[colInvestor]?.trim() || "";
+      
+      // Sinkronkan Category Name dengan Title Case hasil parser file klasifikasi 
       let catStr = row[colCat]?.trim() || "";
-      categoryName = catStr.length > 0 ? catStr : "Other";
+      if (catStr.length > 0) {
+        categoryName = catStr.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      } else {
+        categoryName = "Other";
+      }
       
       let lf = row[colLF]?.trim().toUpperCase() || "";
       if (lf === 'D') lf = 'L'; 
@@ -272,7 +293,7 @@ export default function App() {
       try {
         setIsFetchingDB(true);
         
-        // Menggunakan encodeURI untuk menghindari masalah spasi pada nama file di server Vercel
+        // Fetch paralel asinkronus ke kedua berkas di folder public Vercel
         const [resKsei, resCategories] = await Promise.allSettled([
           fetch('/data-ksei.csv'),
           fetch(encodeURI('/Klasifikasi 39 Jenis Investor.csv'))
@@ -700,7 +721,7 @@ function EmitenView({ data, searchQuery }) {
 
       {filteredTickers.map(group => {
         const rawFF = Math.max(0, Math.min(100, 100 - group.nonPublicTotal));
-        let msciFF = rawFF; // <- KESALAHAN SINTAKS TELAH DIPERBAIKI DI BARIS INI
+        let msciFF = rawFF; 
         
         if (rawFF >= 15.0) {
           msciFF = Math.round(rawFF / 5) * 5;
